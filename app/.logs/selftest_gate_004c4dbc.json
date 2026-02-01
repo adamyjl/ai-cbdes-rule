@@ -1,0 +1,57 @@
+{
+  "ok": true,
+  "ts": "2026-01-30T13:03:58.273061+00:00",
+  "event_id": "004c4dbc-4562-4bd0-a810-578495fdf459",
+  "job_id": "b04da5e6-7d47-48da-afc9-c1e23e362569",
+  "stage": "done",
+  "error": null,
+  "log_tail": [
+    "[prepare] work_dir=C:\\Users\\LG-NB\\AppData\\Local\\Packages\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\LocalCache\\Local\\ai-cbdes-rule\\data\\gate-workspaces\\gate_b04da5e6",
+    "[compile] $ powershell -NoProfile -ExecutionPolicy Bypass -File gate_compile.ps1",
+    "[compile] [compile] using cl.exe",
+    "[compile] stGraphOpt.cpp",
+    "[compile] C:\\Users\\LG-NB\\AppData\\Local\\Packages\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\LocalCache\\Local\\ai-cbdes-rule\\data\\gate-workspaces\\gate_b04da5e6\\Planning\\SpeedPlanning\\SamplingMethod\\STgraphOpt\\src\\stGraphOpt.cpp(1): warning C4819: 该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失",
+    "[compile] C:\\Users\\LG-NB\\AppData\\Local\\Packages\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\LocalCache\\Local\\ai-cbdes-rule\\data\\gate-workspaces\\gate_b04da5e6\\Planning\\SpeedPlanning\\SamplingMethod\\STgraphOpt\\inc\\stGraphOpt.h(1): warning C4819: 该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失",
+    "[compile] gate_unit.cpp",
+    "[compile] C:\\Users\\LG-NB\\AppData\\Local\\Packages\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\LocalCache\\Local\\ai-cbdes-rule\\data\\gate-workspaces\\gate_b04da5e6\\Planning/SpeedPlanning/SamplingMethod/STgraphOpt/inc/stGraphOpt.h(1): warning C4819: 该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失",
+    "[compile] exit_code=0",
+    "[static] $ powershell -NoProfile -ExecutionPolicy Bypass -File gate_static.ps1",
+    "[static] [static] cppcheck_not_found (skip)",
+    "[static] exit_code=0",
+    "[unit] $ powershell -NoProfile -ExecutionPolicy Bypass -File gate_unit.ps1",
+    "[unit] [unit] compiling and running gate_unit.cpp",
+    "[unit] gate_unit.cpp",
+    "[unit] C:\\Users\\LG-NB\\AppData\\Local\\Packages\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\LocalCache\\Local\\ai-cbdes-rule\\data\\gate-workspaces\\gate_b04da5e6\\Planning/SpeedPlanning/SamplingMethod/STgraphOpt/inc/stGraphOpt.h(1): warning C4819: 该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失",
+    "[unit] gate_unit ok=1",
+    "[unit] exit_code=0",
+    "[coverage] $ powershell -NoProfile -ExecutionPolicy Bypass -File gate_coverage.ps1",
+    "[coverage] [coverage] gcov_not_found (skip)",
+    "[coverage] exit_code=0"
+  ],
+  "statuses": [
+    {
+      "step": "compile",
+      "status": "success",
+      "started_at": "2026-01-30T13:03:49.771033+00:00",
+      "finished_at": "2026-01-30T13:03:52.704492+00:00"
+    },
+    {
+      "step": "static",
+      "status": "success",
+      "started_at": "2026-01-30T13:03:52.704510+00:00",
+      "finished_at": "2026-01-30T13:03:53.029567+00:00"
+    },
+    {
+      "step": "unit",
+      "status": "success",
+      "started_at": "2026-01-30T13:03:53.029584+00:00",
+      "finished_at": "2026-01-30T13:03:57.673139+00:00"
+    },
+    {
+      "step": "coverage",
+      "status": "success",
+      "started_at": "2026-01-30T13:03:57.673158+00:00",
+      "finished_at": "2026-01-30T13:03:58.076568+00:00"
+    }
+  ]
+}

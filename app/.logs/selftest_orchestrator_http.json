@@ -1,0 +1,9 @@
+{
+  "ok": true,
+  "reason": "ok",
+  "ts": "2026-01-29T19:52:39.347676+00:00",
+  "http_ok": true,
+  "result_preview": "### Control/LQRController/dependence/controlController.hpp\n```cpp\n/**\n * @file controlController.hpp\n * @brief 智能驾驶控制模块依赖库\n * @details 提供基础几何计算与控制辅助函数\n */\n\n#ifndef CONTROL_CONTROLLER_HPP\n#define CONTROL_CONTROLLER_HPP\n\n#include <cmath>\n\nnamespace Control {\nnamespace LQRController {\nnamespace Dependence {\n\n/**\n * @brief 计算两点间欧几里得距离\n * @en_name Calculate Euclidean distance between two points\n * @cn_name 计算两点距离\n * @type Atomic Function\n * @param[in] x1 第一个点的X坐标\n * @param[in] y1 第一个点的Y坐标\n * @param[in] x2 第二个点的X坐标\n * @param[in] y2 第二个点的Y坐标\n * @retval double 两点间距离\n * @granularity Atomic\n * @tag_leve",
+  "log_preview": "代码生成完成。已实现几何计算功能及单元测试，符合所有编码规范与验收标准。",
+  "key_points_count": 7
+}

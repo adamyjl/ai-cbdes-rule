@@ -1,0 +1,54 @@
+controlMethod: "PID"  # "PID", "MPC", "LQR"
+wheelbase: 1.65    # 轴距
+dt: 0.01     # 控制器周期
+maxSpeed: 17 # m/s
+# 方向盘转角除以前轮转角。放大倍率。
+# 为1时代表底盘输入的是前轮转角，
+# 此时maxSteer代表最大前轮转角
+ratioWheelToSteer: 1 
+maxSteer: 30 # 角度制。方向盘转角[-maxSteer, maxSteer]
+maxDistanceFromTraj: 0.4 # 米。轨迹和车辆的最大距离。大于时停车
+useGaussianCoordinateSystem: true # 是否使用高斯坐标系：北x东y顺时针左手系
+# 是否使用曲线插值
+# 不使用插值时，输入曲线需要给出x,y,yaw,v,curvature,累积路程
+# 并且间隔为0.1m。使用插值时，若点多于100个，控制延时会超过100ms
+useInterpolation: false 
+
+# -------------PID控制相关参数--------------------------------
+### 预瞄距离参数 PIDController::calcPreviewDis
+maxPreviewDistance: 6 # 最大预瞄距离
+previewKV: 1.2 # 速度斜率
+previewExpKC: 1 # 曲率参数
+previewExpThre: 1 # 多大曲率后开始减少预瞄距离
+
+feedforwardWeight: 1    # 前馈权重
+pid_conf:   # 横向PID控制器参数
+  # 误差名称 [distancePID, angleNPID, anglePYawPID, anglePVecPID] 四种
+  distancePID:    # 最近点和自车距离
+    kp: 0.05
+    ki: 0
+    kd: 0
+    isThreshOn: true  # 是否限制积分器阈值
+    errorThresh: 10000    # 积分器阈值上限
+    weight: 1       # 控制器权重
+  angleNPID:  # 最近点和自车航向偏差
+    kp: 0.1
+    ki: 0
+    kd: 0.02
+    isThreshOn: true
+    errorThresh: 10000
+    weight: 0
+  anglePYawPID:  # 预瞄点和自车航向偏差
+    kp: 1
+    ki: 0
+    kd: 0.02
+    isThreshOn: true
+    errorThresh: 10000
+    weight: 0
+  anglePVecPID:  # 自车航向 和 自车朝预瞄点向量 偏差
+    kp: 1
+    ki: 0
+    kd: 0.02
+    isThreshOn: true
+    errorThresh: 10000
+    weight: 0

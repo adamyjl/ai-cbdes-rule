@@ -1,0 +1,62 @@
+{
+  "ok": true,
+  "ts": "2026-01-30T15:32:43.413104+00:00",
+  "event_id": "6a44fea0-33cb-432e-960b-4f51e408c9b3",
+  "job_id": "baf35420-2da2-4085-ab67-b9e3c3225f4e",
+  "stage": "done",
+  "error": null,
+  "log_tail": [
+    "[prepare] work_dir=C:\\Users\\LG-NB\\AppData\\Local\\Packages\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\LocalCache\\Local\\ai-cbdes-rule\\data\\gate-workspaces\\gate_baf35420",
+    "[compile] $ powershell -NoProfile -ExecutionPolicy Bypass -File gate_compile.ps1",
+    "[compile] [compile] using cl.exe",
+    "[compile] stGraphOpt.cpp",
+    "[compile] C:\\Users\\LG-NB\\AppData\\Local\\Packages\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\LocalCache\\Local\\ai-cbdes-rule\\data\\gate-workspaces\\gate_baf35420\\Planning\\SpeedPlanning\\SamplingMethod\\STgraphOpt\\src\\stGraphOpt.cpp(1): warning C4819: 该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失",
+    "[compile] C:\\Users\\LG-NB\\AppData\\Local\\Packages\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\LocalCache\\Local\\ai-cbdes-rule\\data\\gate-workspaces\\gate_baf35420\\Planning\\SpeedPlanning\\SamplingMethod\\STgraphOpt\\src\\../inc/stGraphOpt.h(1): warning C4819: 该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失",
+    "[compile] testStGraphOpt.cpp",
+    "[compile] C:\\Users\\LG-NB\\AppData\\Local\\Packages\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\LocalCache\\Local\\ai-cbdes-rule\\data\\gate-workspaces\\gate_baf35420\\Planning\\SpeedPlanning\\SamplingMethod\\STgraphOpt\\test\\testStGraphOpt.cpp(1): warning C4819: 该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失",
+    "[compile] C:\\Users\\LG-NB\\AppData\\Local\\Packages\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\LocalCache\\Local\\ai-cbdes-rule\\data\\gate-workspaces\\gate_baf35420\\Planning\\SpeedPlanning\\SamplingMethod\\STgraphOpt\\test\\../inc/stGraphOpt.h(1): warning C4819: 该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失",
+    "[compile] C:\\Users\\LG-NB\\AppData\\Local\\Packages\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\LocalCache\\Local\\ai-cbdes-rule\\data\\gate-workspaces\\gate_baf35420\\Planning\\SpeedPlanning\\SamplingMethod\\STgraphOpt\\test\\testStGraphOpt.cpp(25): warning C4100: 'argv': 未引用的参数",
+    "[compile] C:\\Users\\LG-NB\\AppData\\Local\\Packages\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\LocalCache\\Local\\ai-cbdes-rule\\data\\gate-workspaces\\gate_baf35420\\Planning\\SpeedPlanning\\SamplingMethod\\STgraphOpt\\test\\testStGraphOpt.cpp(25): warning C4100: 'argc': 未引用的参数",
+    "[compile] gate_unit.cpp",
+    "[compile] C:\\Users\\LG-NB\\AppData\\Local\\Packages\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\LocalCache\\Local\\ai-cbdes-rule\\data\\gate-workspaces\\gate_baf35420\\Planning/SpeedPlanning/SamplingMethod/STgraphOpt/inc/stGraphOpt.h(1): warning C4819: 该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失",
+    "[compile] exit_code=0",
+    "[static] $ powershell -NoProfile -ExecutionPolicy Bypass -File gate_static.ps1",
+    "[static] [static] cppcheck_not_found (skip)",
+    "[static] exit_code=0",
+    "[unit] $ powershell -NoProfile -ExecutionPolicy Bypass -File gate_unit.ps1",
+    "[unit] [unit] compiling and running gate_unit.cpp",
+    "[unit] gate_unit.cpp",
+    "[unit] C:\\Users\\LG-NB\\AppData\\Local\\Packages\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\LocalCache\\Local\\ai-cbdes-rule\\data\\gate-workspaces\\gate_baf35420\\Planning/SpeedPlanning/SamplingMethod/STgraphOpt/inc/stGraphOpt.h(1): warning C4819: 该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失",
+    "[unit] gate_unit ok=1",
+    "[unit] exit_code=0",
+    "[coverage] $ powershell -NoProfile -ExecutionPolicy Bypass -File gate_coverage.ps1",
+    "[coverage] [coverage] gcov_not_found (skip)",
+    "[coverage] exit_code=0"
+  ],
+  "statuses": [
+    {
+      "step": "compile",
+      "status": "success",
+      "started_at": "2026-01-30T15:32:34.964940+00:00",
+      "finished_at": "2026-01-30T15:32:37.700462+00:00"
+    },
+    {
+      "step": "static",
+      "status": "success",
+      "started_at": "2026-01-30T15:32:37.700496+00:00",
+      "finished_at": "2026-01-30T15:32:38.122720+00:00"
+    },
+    {
+      "step": "unit",
+      "status": "success",
+      "started_at": "2026-01-30T15:32:38.122747+00:00",
+      "finished_at": "2026-01-30T15:32:42.466845+00:00"
+    },
+    {
+      "step": "coverage",
+      "status": "success",
+      "started_at": "2026-01-30T15:32:42.466863+00:00",
+      "finished_at": "2026-01-30T15:32:42.861204+00:00"
+    }
+  ]
+}

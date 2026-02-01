@@ -1,0 +1,93 @@
+controlMethod: "MPC"  # "PID", "MPC", "LQR"
+wheelbase: 2.0    #2.65    # 轴距
+dt: 0.01     # 控制器周期
+maxSpeed: 10 # m/s
+# 方向盘转角除以前轮转角。放大倍率。
+# 为1时代表底盘输入的是前轮转角，
+# 此时maxSteer代表最大前轮转角
+ratioWheelToSteer: 1 
+maxSteer: 30 # 角度制。方向盘转角[-maxSteer, maxSteer]
+maxDistanceFromTraj: 0.6 # 米。轨迹和车辆的最大距离。大于时停车
+useGaussianCoordinateSystem: true # 是否使用高斯坐标系：北x东y顺时针左手系
+# 是否使用曲线插值
+# 不使用插值时，输入曲线需要给出x,y,yaw,v,curvature,累积路程
+# 并且间隔为0.1m。使用插值时，若点多于100个，控制延时会超过100ms
+useInterpolation: false
+
+# -------------纵向控制相关参数--------------------------------
+basicPreviewDistance: 0.0 #纵向控制选取速度点对后轮的初始距离，避免车不走
+
+# -------------PID控制相关参数--------------------------------
+### 预瞄距离参数 PIDController::calcPreviewDis
+initialPreviewDistance: 8 #初始预瞄距离
+maxPreviewDistancePlusDelta: 0.3 #单次最大增加的预瞄距离
+maxPreviewDistanceMinusDelta: 0.6 #单次最大减少的预瞄距离
+plusPreviewPoint: true #用第二个预瞄点辅助计算预瞄距离
+plusPreviewPointweight: 0.5 #第二个预瞄点到预瞄点的比例:plusPreviewID=plusPreviewPointweight*(lastpreviewID-nearestPointID)+nearestPointID
+
+maxPreviewDistance: 9 #12 # 最大预瞄距离
+minPreviewDistance: 6 #最小预瞄距离
+previewKV: 3   # 8 # 速度斜率
+previewExpKC: 60 # 曲率参数
+previewExpThre: 0.08 # 多大曲率后开始减少预瞄距离
+
+feedforwardWeight: 1    # 前馈权重
+pid_conf:   # 横向PID控制器参数
+  # 误差名称 [distancePID, angleNPID, anglePYawPID, anglePVecPID] 四种
+  distancePID:    # 最近点和自车距离
+    kp: 0  #0.1
+    ki: 0.1
+    kd: 0
+    isThreshOn: true  # 是否限制积分器阈值
+    errorThresh: 10000    # 积分器阈值上限
+    isdThreshOn: false  #是否限制微分上限
+    dThresh: 300  #微分上限
+    weight: 0   # 0.2      # 控制器权重
+  angleNPID:  # 最近点和自车航向偏差
+    kp: 0
+    ki: 0
+    kd: 0.001
+    isThreshOn: true
+    errorThresh: 10000
+    isdThreshOn: false
+    dThresh: 300
+    weight: 0
+  anglePYawPID:  # 预瞄点和自车航向偏差
+    kp: 1
+    ki: 0
+    kd: 0.00
+    isThreshOn: true
+    errorThresh: 10000
+    isdThreshOn: false
+    dThresh: 300
+    weight: 0
+  anglePVecPID:  # 自车航向 和 自车朝预瞄点向量 偏差
+    kp: 0 #1
+    ki: 0
+    kd: 0   #1
+    isThreshOn: true
+    errorThresh: 10000
+    isdThreshOn: false
+    dThresh: 300
+    weight: 0   # 0.8 
+
+# -------------MPC控制相关参数--------------------------------
+mpc_conf:
+  NX: 4
+  T: 20
+
+  dt: 0.1
+  ds: 0.05
+
+  speedCost: 0.05
+  yawCost: 0.5
+  steeringAngleDeltaCost: 1
+  distanceCost: 1
+
+  timeDelayCMD: 0
+
+  maxAccel: 2
+  minSpeed: 0
+
+  # debug 显示矩阵大小
+  numHeadCol: 5

@@ -1,0 +1,16 @@
+{
+  "written_files": [
+    {
+      "path": "TrajMatcher/trajMatcher.h",
+      "bytes": 1921
+    },
+    {
+      "path": "TrajMatcher/trajMatcher.cpp",
+      "bytes": 2834
+    },
+    {
+      "path": "main.cpp",
+      "bytes": 1627
+    }
+  ]
+}

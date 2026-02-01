@@ -1,0 +1,34 @@
+{
+}
+
+(ai_cbdes_app) {
+  handle_path /py/* {
+    reverse_proxy 127.0.0.1:8000
+  }
+
+  handle /api/* {
+    reverse_proxy 127.0.0.1:3001
+  }
+
+  handle {
+    root * C:\srv\ai-cbdes-rule\app\dist
+    try_files {path} /index.html
+    file_server
+  }
+}
+
+http://www.ai-cbdes-rule.com, http://ai-cbdes-rule.com {
+  redir https://www.ai-cbdes-rule.com{uri} permanent
+}
+
+https://www.ai-cbdes-rule.com, https://ai-cbdes-rule.com {
+  import ai_cbdes_app
+}
+
+http://localhost, http://127.0.0.1 {
+  import ai_cbdes_app
+}
+
+http://:80 {
+  redir https://www.ai-cbdes-rule.com{uri} permanent
+}

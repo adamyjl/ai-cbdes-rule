@@ -1,0 +1,45 @@
+controlMethod: "PID"  # "PID", "LQR","MPC"
+wheelbase: 1.5   # 轴距cs552.0
+dt: 0.01     # 控制器周期
+maxSpeed: 20 # m/s 最大速度
+
+# 方向盘转角除以前轮转角。放大倍率
+# 为1时代表底盘输入的是前轮转角
+# 此时maxSteer代表最大前轮转角
+ratioWheelToSteer: 1.0 #将前轮转角转换为实际车辆上的转向角度。
+maxSteer: 35 #deg 最大前轮转角[-maxSteer, maxSteer]
+maxDistanceFromTraj: 3 #m 轨迹和车辆的最大距离。大于时停车 @@@0.6
+
+useGaussianCoordinateSystem: true # 是否使用高斯坐标系：北x东y顺时针左手系
+# 是否使用曲线插值
+# 不使用插值时，输入曲线需要给出x,y,yaw,v,curvature,累积路程
+# 并且间隔为0.1m。使用插值时，若点多于100个，控制延时会超过100ms
+useInterpolation: false 
+initialPreviewDistance: 10 #初始预瞄距离
+maxPreviewDistancePlusDelta: 0.3 #单次最大增加的预瞄距离
+maxPreviewDistanceMinusDelta: 0.2 #单次最大减少的预瞄距离  #0.6
+plusPreviewPoint: true #用第二个预瞄点辅助计算预瞄距离
+plusPreviewPointweight: 0.5 #第二个预瞄点到预瞄点的比例:plusPreviewID=plusPreviewPointweight*(lastpreviewID-nearestPointID)+nearestPointID
+
+# -------------航向Yaw_Error PID控制相关参数--------------------------------
+### 预瞄距离参数 PIDController::calcPreviewDis
+
+maxPreviewDistance: 6 # 最大预瞄距离
+minPreviewDistance: 5 #最小预瞄距离
+previewKV: 6  # 预瞄距离速度因子 8
+previewExpKC: 52 # 预瞄距离曲率因子 50
+previewExpThre: 0.038 # 多大曲率后开始减小预瞄距离
+
+steerGain: 0.45
+
+pid_conf:   # 横向PID控制器参数
+  # 误差名称 [distancePID, angleNPID, anglePYawPID, anglePVecPID] 四种
+  anglePVecPID:  # 自车航向和自车朝预瞄点向量 偏差
+    kp: 1100 #1000
+    ki: 10 #10
+    kd: 10   #
+    isThreshOn: true #微分上限
+    errorThresh: 10000 # 微分上限阈值
+    isdThreshOn: false # 积分上限
+    dThresh: 500 #积分上限阈值
+    weight: 1

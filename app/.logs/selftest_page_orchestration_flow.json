@@ -1,0 +1,8 @@
+{
+  "ok": true,
+  "ts": "2026-01-29T19:54:46.359804+00:00",
+  "code_has_fence": true,
+  "archive_latest_has_fence": true,
+  "archived_event_id": "3a84b830-0a92-410e-a3b9-b25f2ae3e9de",
+  "result_preview": "### Control/LQRController/dependence/controlController.hpp\n```cpp\n/**\n * @file controlController.hpp\n * @brief 智能驾驶控制模块通用定义与工具函数\n * @details 包含二维几何计算的结构体定义与原子函数实现\n * @version 1.0\n * @date 2023-10-27\n * @author SystemGen\n */\n\n#ifndef CONTROL_CONTROLLER_HPP\n#define CONTROL_CONTROLLER_HPP\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n#include <math.h>\n\n/**\n * @brief 二维点坐标结构体\n * @details 存储二维平面上的点坐标\n */\ntypedef struct {\n    double X; /* X坐标, 单位: m */\n    double Y; /* Y坐标, 单位: m */\n} Point2D;\n\n/**\n * @bri"
+}

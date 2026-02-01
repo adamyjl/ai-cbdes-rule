@@ -1,0 +1,16 @@
+{
+  "written_files": [
+    {
+      "path": "common/sortArray.h",
+      "bytes": 873
+    },
+    {
+      "path": "common/sortArray.cpp",
+      "bytes": 5393
+    },
+    {
+      "path": "test/testSortArray.cpp",
+      "bytes": 3430
+    }
+  ]
+}

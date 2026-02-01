@@ -1,0 +1,139 @@
+[
+  {
+    "module_key": "v20990101-test:ns:bar",
+    "version": "v20990101-test",
+    "namespace": "ns",
+    "root_function": "bar",
+    "functions": [
+      "bar",
+      "foo"
+    ],
+    "edges": [
+      {
+        "from": "bar",
+        "to": "foo"
+      }
+    ],
+    "updated_at": "2026-01-30T14:11:48.771900+00:00",
+    "created_at": "2026-01-30T14:11:48.772104+00:00"
+  },
+  {
+    "module_key": "v20260130-86b99306:STgraphOpt:main",
+    "version": "v20260130-86b99306",
+    "namespace": "STgraphOpt",
+    "root_function": "main",
+    "functions": [
+      "generateInitialGuess",
+      "main",
+      "optimizeVelocityTrajectory",
+      "runOptimizationLoop",
+      "stepBSplineFit",
+      "stepCubicFit",
+      "stepL2Smooth",
+      "validateInput"
+    ],
+    "edges": [
+      {
+        "from": "main",
+        "to": "optimizeVelocityTrajectory"
+      },
+      {
+        "from": "optimizeVelocityTrajectory",
+        "to": "generateInitialGuess"
+      },
+      {
+        "from": "optimizeVelocityTrajectory",
+        "to": "runOptimizationLoop"
+      },
+      {
+        "from": "optimizeVelocityTrajectory",
+        "to": "validateInput"
+      },
+      {
+        "from": "runOptimizationLoop",
+        "to": "stepBSplineFit"
+      },
+      {
+        "from": "runOptimizationLoop",
+        "to": "stepCubicFit"
+      },
+      {
+        "from": "runOptimizationLoop",
+        "to": "stepL2Smooth"
+      }
+    ],
+    "updated_at": "2026-01-30T14:33:44.069850+00:00",
+    "created_at": "2026-01-30T14:33:44.088569+00:00"
+  },
+  {
+    "module_key": "v20260130-86b99306:default:main",
+    "version": "v20260130-86b99306",
+    "namespace": "default",
+    "root_function": "main",
+    "functions": [
+      "generateInitialGuess",
+      "main",
+      "optimizeVelocityTrajectory",
+      "runOptimizationLoop",
+      "stepBSplineFit",
+      "stepCubicFit",
+      "stepL2Smooth",
+      "validateInput"
+    ],
+    "edges": [
+      {
+        "from": "main",
+        "to": "optimizeVelocityTrajectory"
+      },
+      {
+        "from": "optimizeVelocityTrajectory",
+        "to": "generateInitialGuess"
+      },
+      {
+        "from": "optimizeVelocityTrajectory",
+        "to": "runOptimizationLoop"
+      },
+      {
+        "from": "optimizeVelocityTrajectory",
+        "to": "validateInput"
+      },
+      {
+        "from": "runOptimizationLoop",
+        "to": "stepBSplineFit"
+      },
+      {
+        "from": "runOptimizationLoop",
+        "to": "stepCubicFit"
+      },
+      {
+        "from": "runOptimizationLoop",
+        "to": "stepL2Smooth"
+      }
+    ],
+    "updated_at": "2026-01-31T04:50:53.228230+00:00",
+    "created_at": "2026-01-31T04:50:53.229442+00:00"
+  },
+  {
+    "module_key": "v20260131-9b730d2c:default:main",
+    "version": "v20260131-9b730d2c",
+    "namespace": "default",
+    "root_function": "main",
+    "functions": [
+      "calcSquaredDist",
+      "findNearestTrajPoint",
+      "main"
+    ],
+    "edges": [
+      {
+        "from": "findNearestTrajPoint",
+        "to": "calcSquaredDist"
+      },
+      {
+        "from": "main",
+        "to": "findNearestTrajPoint"
+      }
+    ],
+    "updated_at": "2026-01-31T09:00:37.707758+00:00",
+    "created_at": "2026-01-31T09:00:37.711370+00:00"
+  }
+]
