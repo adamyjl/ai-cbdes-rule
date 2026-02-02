@@ -2,6 +2,9 @@
 
 面向“智能驾驶基础软件”的智能编码平台原型：把既有代码资产（函数粒度）通过 RAG 管理成可检索库，再将需求结构化为任务卡，经“消歧 → 编排 → 生成 → 门禁 → 发布 → 归档”形成可追溯闭环。
 
+Deploy WebSite
+https://www.ai-cbdes-rule.com/online/task
+
 本仓库包含两部分：
 - `app/`：可运行的平台实现（前端 + 后端 + 部署脚本）
 - `data/`：运行时数据与样例工作区（档案、门禁工作区等，生产建议外置）
@@ -170,11 +173,23 @@ powershell -ExecutionPolicy Bypass -File .\.deploy\windows-server\deploy.ps1 `
 
 > 下列图片为风格化示例图，用于 README 展示；实际界面以运行后的页面为准。
 
-![平台首页示意](https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=dark%20theme%20web%20dashboard%2C%20AI%20coding%20platform%2C%20sidebar%20navigation%20with%20Offline%20and%20Online%20sections%2C%20Chinese%20labels%2C%20cards%20showing%20RAG%20management%2C%20Archive%2C%20Task%20Input%2C%20Gate%20Test%2C%20modern%20UI%2C%20high%20fidelity%20product%20screenshot%20style%2C%20no%20logos&image_size=landscape_16_9)
+![平台首页示意]
+<div align="center">
+<img width="1200" height="475" alt="GHBanner" src="./resource/task.png" />
+</div>
 
-![函数编排与生成示意](https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=dark%20theme%20web%20app%20page%2C%20function%20orchestration%20and%20code%20generation%20panel%2C%20left%20side%20event%20selector%2C%20right%20side%20prompt%20preview%20and%20generated%20code%20editor%2C%20Chinese%20UI%20text%2C%20high%20fidelity%20screenshot%2C%20no%20logos&image_size=landscape_16_9)
+![COT消歧]
+<div align="center">
+<img width="1200" height="475" alt="GHBanner" src="./resource/cot.png" />
+</div>
 
-![测试门禁示意](https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=dark%20theme%20web%20app%20page%2C%20CI%20gate%20test%20pipeline%2C%20steps%20compile%2C%20static%2C%20unit%2C%20coverage%20with%20status%20icons%2C%20log%20console%20panel%2C%20Chinese%20UI%20text%2C%20high%20fidelity%20screenshot%2C%20no%20logos&image_size=landscape_16_9)
+![函数编排与生成示意]
+<div align="center">
+<img width="1200" height="475" alt="GHBanner" src="./resource/generate.png" />
+</div>
 
-![发布与归档示意](https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=dark%20theme%20web%20app%20page%2C%20release%20publish%20workflow%2C%20select%20gate%20passed%20artifact%2C%20version%20input%2C%20buttons%20for%20RAG%20index%20and%20module%20upsert%2C%20tables%20showing%20results%2C%20Chinese%20UI%20text%2C%20high%20fidelity%20screenshot%2C%20no%20logos&image_size=landscape_16_9)
+![测试门禁示意]
+<div align="center">
+<img width="1200" height="475" alt="GHBanner" src="./resource/test.png" />
+</div>
 
