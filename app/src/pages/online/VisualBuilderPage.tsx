@@ -23,6 +23,7 @@ import { CPP_SPEC } from '../../utils/cppSpec'
 import { extractPureCppFromMarkdown } from '../../utils/cppExtract'
 
 const STORAGE_KEY = 'builder:visual-builder:v1'
+const EXPORT_EVENT_KEY = 'builder:visual-builder:lastExportEventId:v1'
 
 function loadDraft():
   | {
@@ -151,21 +152,30 @@ export function VisualBuilderPage() {
 
   useEffect(() => {
     const saved = loadDraft()
-    if (!saved) return
-    if (saved.rootDir) setRootDir(saved.rootDir)
-    setNodes(saved.nodes || [])
-    setEdges(saved.edges || [])
-    setHideGlue(Boolean(saved.hideGlue))
-    setTaskContext(saved.taskContext || '')
-    setLastPublishedModuleKey(saved.lastPublishedModuleKey)
-    setLastExportEventId(saved.lastExportEventId)
-    window.setTimeout(() => setFitViewToken((v) => v + 1), 0)
+    if (saved) {
+      if (saved.rootDir) setRootDir(saved.rootDir)
+      setNodes(saved.nodes || [])
+      setEdges(saved.edges || [])
+      setHideGlue(Boolean(saved.hideGlue))
+      setTaskContext(saved.taskContext || '')
+      setLastPublishedModuleKey(saved.lastPublishedModuleKey)
+      setLastExportEventId(saved.lastExportEventId)
+      window.setTimeout(() => setFitViewToken((v) => v + 1), 0)
+    }
 
-    if (saved.lastExportEventId) {
+    let exportId: string | null = null
+    try {
+      exportId = localStorage.getItem(EXPORT_EVENT_KEY)
+    } catch {
+      exportId = null
+    }
+    const finalExportId = exportId || (saved ? saved.lastExportEventId : null)
+    if (finalExportId) {
+      setLastExportEventId(finalExportId)
       void (async () => {
         try {
           const list = await archiveList(500)
-          const ev = list.find((x) => String((x as any)?.id || '') === String(saved.lastExportEventId))
+          const ev = list.find((x) => String((x as any)?.id || '') === String(finalExportId))
           const code = String((ev as any)?.payload?.code || '')
           if (code.trim()) {
             setExportedCode(code)
@@ -802,8 +812,15 @@ export function VisualBuilderPage() {
           graph: { nodes, edges, root_dir: rootDir, task_context: taskContext, hide_glue: hideGlue },
           source: 'visual-builder'
         })
-        setLastExportEventId(String(ev?.id || ''))
-        saveDraft({ rootDir, nodes, edges, hideGlue, taskContext, lastPublishedModuleKey, lastExportEventId: String(ev?.id || '') })
+        const exportId = String(ev?.id || '')
+        if (exportId) {
+          setLastExportEventId(exportId)
+          try {
+            localStorage.setItem(EXPORT_EVENT_KEY, exportId)
+          } catch {
+          }
+          saveDraft({ rootDir, nodes, edges, hideGlue, taskContext, lastPublishedModuleKey, lastExportEventId: exportId })
+        }
       } catch {
       }
       message.success('已导出并入档')

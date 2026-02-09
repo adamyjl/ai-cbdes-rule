@@ -93,10 +93,17 @@ def llm_call(fn: Callable[[], T]) -> T:
     max_attempts = max(1, min(_env_int('AI_CBDES_LLM_RETRY_MAX_ATTEMPTS', 8), 20))
     base = max(0.2, _env_float('AI_CBDES_LLM_RETRY_BASE_SECONDS', 1.0))
     cap = max(base, _env_float('AI_CBDES_LLM_RETRY_MAX_SECONDS', 60.0))
+    total_timeout_s = max(5.0, _env_float('AI_CBDES_LLM_TOTAL_TIMEOUT_SECONDS', 180.0))
+
+    start = time.time()
 
     attempt = 0
     while True:
         attempt += 1
+
+        if time.time() - start > total_timeout_s:
+            raise RuntimeError('llm_total_timeout')
+
         _limiter.acquire()
         try:
             return fn()
@@ -109,7 +116,11 @@ def llm_call(fn: Callable[[], T]) -> T:
             else:
                 expo = min(cap, base * (2 ** (attempt - 1)))
                 sleep_s = min(cap, expo * (0.5 + random.random()))
+
+            remaining = total_timeout_s - (time.time() - start)
+            if remaining <= 0:
+                raise RuntimeError('llm_total_timeout')
+            sleep_s = min(sleep_s, max(0.01, remaining))
             time.sleep(sleep_s)
         finally:
             _limiter.release()
-

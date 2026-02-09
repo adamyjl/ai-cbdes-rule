@@ -164,14 +164,18 @@ function extractFunctionsFromFiles(files: SplitFile[]): SplitFunction[] {
   const out: SplitFunction[] = []
   for (const f of files) {
     const src = String(f.content || '')
-    const re = /(^|\n)(?!\s*(if|for|while|switch|catch)\s*\()\s*([_a-zA-Z][\w:\<\>\*\&\s]*?)\s+([_a-zA-Z]\w*)\s*\(([^;]*?)\)\s*(?:const\s*)?\{/g
+    const re =
+      /(^|\n)(?!\s*(?:else\s+)?(?:if|for|while|switch|catch)\s*\()\s*(?:template\s*<[^;{}>]*>\s*)?(?:inline\s+|static\s+|constexpr\s+|consteval\s+|virtual\s+|explicit\s+|friend\s+|extern\s+|typename\s+)*([_a-zA-Z~][\w:\<\>\*\&\s]*?)\s+([_a-zA-Z~][\w]*(?:::[_a-zA-Z~][\w]*)*)\s*\(([^;{}]*?)\)\s*(?:const\s*)?(?:noexcept(?:\s*\([^)]*\))?\s*)?(?:->\s*[^\{;]+)?\s*\{/g
     let m: RegExpExecArray | null
     while ((m = re.exec(src))) {
-      const name = String(m[4] || '').trim()
+      const name = String(m[3] || '').trim()
       const headerStart = m.index + String(m[1] || '').length
       const openBraceIndex = re.lastIndex - 1
       const closeBraceIndex = findMatchingBrace(src, openBraceIndex)
       if (!name || closeBraceIndex < 0) continue
+
+      const head = name.includes('::') ? name.split('::').slice(-1)[0] : name
+      if (['if', 'for', 'while', 'switch', 'catch', 'else'].includes(head)) continue
 
       const signature = src.slice(headerStart, openBraceIndex).trim()
 
@@ -210,6 +214,17 @@ function extractFunctionsFromFiles(files: SplitFile[]): SplitFunction[] {
     unique.push(fn)
   }
   return unique
+}
+
+function isSuspiciousFunctionSplits(fns: any[]): boolean {
+  if (!Array.isArray(fns) || fns.length === 0) return true
+  const bad = new Set(['if', 'for', 'while', 'switch', 'catch', 'else'])
+  for (const x of fns) {
+    const n = String((x as any)?.name || '')
+    const head = n.includes('::') ? n.split('::').slice(-1)[0] : n
+    if (bad.has(head)) return true
+  }
+  return false
 }
 
 const STORAGE_KEY = 'online:gate_state:v1'
@@ -415,8 +430,9 @@ export function TestGatePage() {
       const fns = Array.isArray(payload.function_splits) ? payload.function_splits : []
       if (files.length) setSplitFiles(files)
       else setSplitFiles(extractFilesFromMarkdown(raw))
-      if (fns.length) setSplitFunctions(fns)
-      else setSplitFunctions(extractFunctionsFromFiles(extractFilesFromMarkdown(raw)))
+      const computedFns = extractFunctionsFromFiles(files.length ? (files as any) : extractFilesFromMarkdown(raw))
+      if (fns.length && !isSuspiciousFunctionSplits(fns)) setSplitFunctions(fns)
+      else setSplitFunctions(computedFns)
       setWorkDir(String((cfg as any).work_dir || DEFAULT_WORK_DIR))
       setCompileCommand(String((cfg as any).compile_command || DEFAULT_COMPILE_COMMAND))
       setStaticCommand(String((cfg as any).static_command || DEFAULT_STATIC_COMMAND))

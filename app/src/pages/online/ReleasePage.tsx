@@ -129,14 +129,18 @@ function extractFunctionsFromFiles(files: SplitFile[]): SplitFunction[] {
   const out: SplitFunction[] = []
   for (const f of files) {
     const src = String(f.content || '')
-    const re = /(^|\n)(?!\s*(if|for|while|switch|catch)\s*\()\s*([_a-zA-Z][\w:\<\>\*\&\s]*?)\s+([_a-zA-Z]\w*)\s*\(([^;]*?)\)\s*(?:const\s*)?\{/g
+    const re =
+      /(^|\n)(?!\s*(?:else\s+)?(?:if|for|while|switch|catch)\s*\()\s*(?:template\s*<[^;{}>]*>\s*)?(?:inline\s+|static\s+|constexpr\s+|consteval\s+|virtual\s+|explicit\s+|friend\s+|extern\s+|typename\s+)*([_a-zA-Z~][\w:\<\>\*\&\s]*?)\s+([_a-zA-Z~][\w]*(?:::[_a-zA-Z~][\w]*)*)\s*\(([^;{}]*?)\)\s*(?:const\s*)?(?:noexcept(?:\s*\([^)]*\))?\s*)?(?:->\s*[^\{;]+)?\s*\{/g
     let m: RegExpExecArray | null
     while ((m = re.exec(src))) {
-      const name = String(m[4] || '').trim()
+      const name = String(m[3] || '').trim()
       const headerStart = m.index + String(m[1] || '').length
       const openBraceIndex = re.lastIndex - 1
       const closeBraceIndex = findMatchingBrace(src, openBraceIndex)
       if (!name || closeBraceIndex < 0) continue
+
+      const head = name.includes('::') ? name.split('::').slice(-1)[0] : name
+      if (['if', 'for', 'while', 'switch', 'catch', 'else'].includes(head)) continue
       const signature = src.slice(headerStart, openBraceIndex).trim()
       let comment = ''
       let commentStart = headerStart
@@ -164,6 +168,17 @@ function extractFunctionsFromFiles(files: SplitFile[]): SplitFunction[] {
     unique.push(fn)
   }
   return unique
+}
+
+function isSuspiciousFunctionSplits(fns: any[]): boolean {
+  if (!Array.isArray(fns) || fns.length === 0) return true
+  const bad = new Set(['if', 'for', 'while', 'switch', 'catch', 'else'])
+  for (const x of fns) {
+    const n = String((x as any)?.name || '')
+    const head = n.includes('::') ? n.split('::').slice(-1)[0] : n
+    if (bad.has(head)) return true
+  }
+  return false
 }
 
 function isGatePassed(ev: ArchiveEvent) {
@@ -289,7 +304,8 @@ export function ReleasePage() {
     const raw = String(payload.generated_result || '').trim()
     setGeneratedResult(raw)
     const fs = Array.isArray(payload.file_splits) && payload.file_splits.length ? payload.file_splits : extractFilesFromMarkdown(raw)
-    const fns = Array.isArray(payload.function_splits) && payload.function_splits.length ? payload.function_splits : extractFunctionsFromFiles(fs)
+    const fnsRaw = Array.isArray(payload.function_splits) ? payload.function_splits : []
+    const fns = fnsRaw.length && !isSuspiciousFunctionSplits(fnsRaw) ? fnsRaw : extractFunctionsFromFiles(fs)
     setFileSplits(fs)
     setFunctionSplits(fns)
   }

@@ -1,0 +1,32 @@
+{
+  "written_files": [
+    {
+      "path": "Common/dataType.h",
+      "bytes": 1840
+    },
+    {
+      "path": "Common/rapidxml.hpp",
+      "bytes": 549
+    },
+    {
+      "path": "RoutingPlanning/include/mapAnalysis.h",
+      "bytes": 989
+    },
+    {
+      "path": "RoutingPlanning/include/topoPathFinder.h",
+      "bytes": 1193
+    },
+    {
+      "path": "RoutingPlanning/src/mapAnalysis.cpp",
+      "bytes": 2752
+    },
+    {
+      "path": "RoutingPlanning/src/topoPathFinder.cpp",
+      "bytes": 3543
+    },
+    {
+      "path": "RoutingPlanning/src/mainRouter.cpp",
+      "bytes": 2284
+    }
+  ]
+}

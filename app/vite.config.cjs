@@ -3,6 +3,9 @@ const { defineConfig } = require('vite')
 
 module.exports = defineConfig({
   plugins: [react()],
+  build: {
+    minify: false
+  },
   server: {
     host: '127.0.0.1',
     port: 5173,

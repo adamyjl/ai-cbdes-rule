@@ -181,13 +181,24 @@ async function parseJsonOrText(res: Response) {
 }
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const ac = new AbortController()
+  const externalSignal = init?.signal
+  if (externalSignal) {
+    if (externalSignal.aborted) ac.abort()
+    else externalSignal.addEventListener('abort', () => ac.abort(), { once: true })
+  }
+
+  const timeoutMs = url.startsWith('/py/orchestrator/') || url.startsWith('/py/cot/') ? 180_000 : 60_000
+  const t = window.setTimeout(() => ac.abort(), timeoutMs)
+
   const res = await fetch(url, {
     ...init,
+    signal: ac.signal,
     headers: {
       ...(init?.headers ?? {}),
       'content-type': 'application/json'
     }
-  })
+  }).finally(() => window.clearTimeout(t))
   if (!res.ok) {
     const body = await parseJsonOrText(res)
     throw new Error(typeof body === 'string' ? body : JSON.stringify(body))

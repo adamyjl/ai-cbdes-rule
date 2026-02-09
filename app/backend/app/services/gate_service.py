@@ -12,6 +12,7 @@ from backend.app.services.gate_jobs import GateJob, registry
 from backend.app.services.gate_workspace import create_workspace, ensure_gate_scaffold, materialize_generated_result
 from backend.app.services.llm_policy import llm_call
 from backend.app.services.openai_client import get_chat_model, get_openai_client
+from backend.app.services.orchestrator_service import OrchestratorService
 
 
 def _parse_json(text: str) -> dict:
@@ -112,6 +113,43 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _tail_lines(lines: list[str], n: int) -> str:
+    if not lines:
+        return ''
+    return '\n'.join(lines[-max(1, int(n)) :])
+
+
+def _looks_like_missing_include(log_tail: str) -> bool:
+    t = (log_tail or '').lower()
+    return ('fatal error c1083' in t and 'no such file or directory' in t) or ('cannot open include file' in t)
+
+
+def _repair_prompt(*, requirement_prompt: str, generated_result: str, compile_log_tail: str) -> str:
+    req = (requirement_prompt or '').strip()
+    gen = (generated_result or '').strip()
+    log = (compile_log_tail or '').strip()
+
+    if len(req) > 6000:
+        req = req[:6000] + '\n\n(…省略)'
+    if len(gen) > 20000:
+        gen = gen[:20000] + '\n\n(…省略)'
+    if len(log) > 6000:
+        log = log[-6000:]
+
+    return (
+        '你是 C/C++ 代码修复工程师。现有生成代码在门禁 compile 步骤失败。\n'
+        '请根据“需求提示词 + 现有生成结果 + 编译器错误日志”，输出一份【可在门禁工作区独立编译】的多文件 C/C++ 代码。\n\n'
+        '硬性要求：\n'
+        '1) 不能引用工作区之外的任何相对路径（例如 ../../Common/... 这类），若需要依赖请同时输出对应 .h/.cpp 文件；\n'
+        '2) 所有 #include "xxx" 必须能在工作区内找到对应文件；\n'
+        '3) 保留原意（实现目标功能/流程），但允许重构目录结构以确保可编译落地；\n'
+        '4) 输出必须为 Markdown 多文件格式：每个文件以一行 "### relative/path" 开始，随后是对应 ```cpp 代码块。\n\n'
+        f'## 需求提示词\n{req}\n\n'
+        f'## 现有生成结果（可能不完整）\n{gen}\n\n'
+        f'## 编译器错误日志（tail）\n{log}\n'
+    )
+
+
 class GateService:
     def start(self, job: GateJob) -> None:
         t = threading.Thread(target=self._run, args=(job,), daemon=True)
@@ -157,6 +195,26 @@ class GateService:
             registry.set_stage(job, 'compile')
             registry.touch_step(job, 'compile', status='running', started_at=_utc_now_iso(), finished_at=None)
             code = _run_command(job, step='compile', command=job.compile_command)
+            if code != 0:
+                tail = _tail_lines(job.log_lines, 160)
+                if _looks_like_missing_include(tail):
+                    registry.append_log(job, '[compile] detected missing include; try auto-repair once')
+                    try:
+                        prompt = _repair_prompt(
+                            requirement_prompt=job.requirement_prompt,
+                            generated_result=job.generated_result,
+                            compile_log_tail=tail,
+                        )
+                        out = OrchestratorService().generate_cpp_code(prompt=prompt)
+                        repaired = str(out.get('code') or '').strip()
+                        if repaired:
+                            registry.update(job, generated_result=repaired)
+                            materialize_generated_result(work_dir=Path(job.work_dir), generated_result=repaired)
+                            registry.append_log(job, '[compile] auto-repair materialized; retry compile')
+                            code = _run_command(job, step='compile', command=job.compile_command)
+                    except Exception as e:
+                        registry.append_log(job, f"[compile] auto-repair failed: {str(e) or type(e).__name__}")
+
             registry.touch_step(job, 'compile', status='success' if code == 0 else 'failed', finished_at=_utc_now_iso())
             if code != 0:
                 registry.set_error(job, 'compile_failed')
