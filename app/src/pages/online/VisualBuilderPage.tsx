@@ -2,6 +2,7 @@ import { Button, Card, Divider, Input, Modal, Space, Switch, Tabs, Typography, m
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { PageScaffold } from '../PageScaffold'
 import {
+  archiveList,
   codegenGlue,
   orchestratorGenerateCode,
   ragGetFunction,
@@ -31,8 +32,7 @@ function loadDraft():
       hideGlue: boolean
       taskContext: string
       lastPublishedModuleKey: string | null
-      exportedCode: string
-      exportedCodeRaw: string
+      lastExportEventId: string | null
     }
   | null {
   try {
@@ -48,8 +48,7 @@ function loadDraft():
       taskContext: String((v as any).taskContext || ''),
       lastPublishedModuleKey:
         typeof (v as any).lastPublishedModuleKey === 'string' ? (v as any).lastPublishedModuleKey : null,
-      exportedCode: String((v as any).exportedCode || ''),
-      exportedCodeRaw: String((v as any).exportedCodeRaw || '')
+      lastExportEventId: typeof (v as any).lastExportEventId === 'string' ? String((v as any).lastExportEventId) : null
     }
   } catch {
     return null
@@ -63,8 +62,7 @@ function saveDraft(v: {
   hideGlue: boolean
   taskContext: string
   lastPublishedModuleKey: string | null
-  exportedCode: string
-  exportedCodeRaw: string
+  lastExportEventId: string | null
 }) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(v))
@@ -143,6 +141,7 @@ export function VisualBuilderPage() {
   const [exportBusy, setExportBusy] = useState(false)
   const [exportedCode, setExportedCode] = useState('')
   const [exportedCodeRaw, setExportedCodeRaw] = useState('')
+  const [lastExportEventId, setLastExportEventId] = useState<string | null>(null)
 
   const [gluePromptOpen, setGluePromptOpen] = useState(false)
   const [glueBusy, setGlueBusy] = useState(false)
@@ -159,17 +158,31 @@ export function VisualBuilderPage() {
     setHideGlue(Boolean(saved.hideGlue))
     setTaskContext(saved.taskContext || '')
     setLastPublishedModuleKey(saved.lastPublishedModuleKey)
-    setExportedCode(saved.exportedCode || '')
-    setExportedCodeRaw(saved.exportedCodeRaw || '')
+    setLastExportEventId(saved.lastExportEventId)
     window.setTimeout(() => setFitViewToken((v) => v + 1), 0)
+
+    if (saved.lastExportEventId) {
+      void (async () => {
+        try {
+          const list = await archiveList(500)
+          const ev = list.find((x) => String((x as any)?.id || '') === String(saved.lastExportEventId))
+          const code = String((ev as any)?.payload?.code || '')
+          if (code.trim()) {
+            setExportedCode(code)
+            setExportedCodeRaw(code)
+          }
+        } catch {
+        }
+      })()
+    }
   }, [])
 
   useEffect(() => {
     const t = window.setTimeout(() => {
-      saveDraft({ rootDir, nodes, edges, hideGlue, taskContext, lastPublishedModuleKey, exportedCode, exportedCodeRaw })
+      saveDraft({ rootDir, nodes, edges, hideGlue, taskContext, lastPublishedModuleKey, lastExportEventId })
     }, 350)
     return () => window.clearTimeout(t)
-  }, [edges, exportedCode, exportedCodeRaw, hideGlue, lastPublishedModuleKey, nodes, rootDir, taskContext])
+  }, [edges, hideGlue, lastPublishedModuleKey, lastExportEventId, nodes, rootDir, taskContext])
 
   useEffect(() => {
     const t = window.setTimeout(() => {
@@ -728,7 +741,7 @@ export function VisualBuilderPage() {
 
     const part1 = [
       '## 任务描述',
-      '根据画布中已有的函数源码、胶水代码、模块层级与连接关系，输出目标模块的代码模块描述与简介，整合已有实现与调用前后关系，并生成可编译运行的目标 C++ 代码（必须包含运行所需的 .h 头文件与 .cpp 源码）。',
+      '根据已有的函数代码和模块连接关系，给出代码模块的描述和简介，整合已有实现代码和调用前后关系，并生成可编译运行的目标 C++代码，给出所需运行必要的h头文件代码和cpp文件源代码。',
       moduleDesc ? `画布目标模块：${moduleDesc}` : '画布目标模块：未命名',
       rootDir ? `工程根目录：${rootDir}` : '',
       taskContext.trim() ? `补充任务描述：${taskContext.trim()}` : ''
@@ -780,7 +793,7 @@ export function VisualBuilderPage() {
       setExportedCodeRaw(extracted.raw)
       setExportedCode(extracted.display)
       try {
-        await appendArchive('orchestrator.generate', {
+        const ev = await appendArchive('orchestrator.generate', {
           source_event: null,
           prompt,
           code: extracted.raw,
@@ -789,6 +802,8 @@ export function VisualBuilderPage() {
           graph: { nodes, edges, root_dir: rootDir, task_context: taskContext, hide_glue: hideGlue },
           source: 'visual-builder'
         })
+        setLastExportEventId(String(ev?.id || ''))
+        saveDraft({ rootDir, nodes, edges, hideGlue, taskContext, lastPublishedModuleKey, lastExportEventId: String(ev?.id || '') })
       } catch {
       }
       message.success('已导出并入档')

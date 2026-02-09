@@ -342,6 +342,15 @@ class OrchestratorService:
 
     def generate_cpp_code(self, *, prompt: str) -> dict:
         prompt = (prompt or '').strip()
+
+        legacy_line = '请根据当前画布中的模块、函数以及它们的连接关系，整合已有实现并生成可编译运行的目标 C++ 代码。'
+        improved_line = (
+            '根据已有的函数代码和模块连接关系，给出代码模块的描述和简介，整合已有实现代码和调用前后关系，并生成可编译运行的目标 C++代码，'
+            '给出所需运行必要的h头文件代码和cpp文件源代码。'
+        )
+        if legacy_line in prompt:
+            prompt = prompt.replace(legacy_line, improved_line)
+
         if CPP_REWRITE_SPEC in prompt:
             merged = prompt
         else:

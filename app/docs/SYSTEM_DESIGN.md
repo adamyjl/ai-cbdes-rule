@@ -177,24 +177,99 @@ Online（核心闭环）：
 
 ### 5.3 Online：需求到代码的可追溯流水线
 
-1. **任务输入**：填写目标、输入输出、约束与验收标准，提交后端分析，得到 `task.analyze`（并入档）。
-2. **路由消歧**：针对风险与缺失信息逐条问答，收敛得到 `cot.disambiguation`（并入档）。
-3. **函数编排与生成**：选择 `cot.disambiguation` 作为输入源，生成最终提示词并调用编排生成，得到 `orchestrator.generate`（并入档）。
-4. **测试门禁**：选择 `orchestrator.generate` 作为输入源启动门禁，得到 `gate.run` 证据链（并入档）。
-5. **发布**：只允许选择“门禁通过”的 `gate.run` 作为发布源；执行产物切分/回写与发布归档，得到 `release.publish`。
+本系统目前存在两条在线闭环：
+
+- 流程 1：**消歧 → 编排 → 生成 → 门禁 → 发布 → 归档**（原有主闭环）
+- 流程 2：**函数 → 模块 → 搭建 → 图形化 → 导出 → 检测 → 归档**（图形化搭建闭环）
+
+#### 5.3.1 流程 1：消歧 → 编排 → 生成 → 门禁 → 发布 → 归档
+
+1. 消歧（Online / 路由消歧，`/online/routing`）
+   - 输入：来自“任务输入/任务分析”的结构化目标、约束、子任务与风险点（通常先完成 `task.analyze`）。
+   - 交互：对缺失信息/歧义点进行问答，收敛目标与约束。
+   - 后端 API：`/py/cot/*`。
+   - 落盘：写入档案事件 `cot.disambiguation` → `archive.jsonl`（payload 内包含收敛后的目标/约束/子任务与问答记录，用于可追溯复现）。
+
+2. 编排（Online / 函数编排与生成，`/online/orchestration`）
+   - 输入：从档案选择 `cot.disambiguation` 作为输入源。
+   - 交互：生成最终提示词（把目标/约束/子任务 + RAG 关联函数源码附录整合为 prompt）。
+   - 后端 API：`/py/orchestrator/generate`（提示词在后端会追加 C++ 统一规范）。
+   - 落盘：写入档案事件 `orchestrator.generate`（payload 通常包含 `prompt`、`code`、`key_points`、`log`）。
+
+3. 生成（同 2 步触发）
+   - 产物：Markdown 多文件格式（`### relative/path` + code block），便于门禁落盘工程化。
+   - 重要约束：生成结果必须能“落盘成多文件工程”；若缺少头文件/工程结构不完整，将在门禁阶段暴露。
+
+4. 门禁（Online / 测试门禁，`/online/testing`）
+   - 输入：从档案选择 `orchestrator.generate` 作为输入源。
+   - 交互：启动门禁 job，轮询 job 状态，展示 compile/static/unit/coverage 四步结果。
+   - 后端 API：`/py/gate/start`、`/py/gate/jobs/{job_id}`。
+   - 落盘：
+     - 工作区：`{data_dir}/gate-workspaces/gate_<id>/...`（写入拆分后的源码 + scaffold + 脚本 + 日志）。
+     - 档案：写入 `gate.run`（证据链摘要、关键日志、是否通过）。
+
+5. 发布（Online / 发布，`/online/release`）
+   - 输入：只允许选择“门禁通过”的 `gate.run` 作为发布源。
+   - 交互：可选进行产物切分（函数级）并回写 RAG/发布库。
+   - 后端 API：`/py/release/rag-index`、`/py/release/modules-upsert`。
+   - 落盘：
+     - 发布库：`{data_dir}/release_modules.json`（按 `module_key` upsert，支持按 `version` 查询）。
+     - 档案：写入 `release.publish`（版本、回写结果、发布摘要）。
+
+6. 归档（贯穿全流程）
+   - 归档介质：`{data_dir}/archive.jsonl`。
+   - 归档内容：每一步的输入/输出与关键证据（尤其是 prompt、生成源码、门禁日志摘要、发布版本信息）。
+
+#### 5.3.2 流程 2：函数 → 模块 → 搭建 → 图形化 → 导出 → 检测 → 归档
+
+该流程的核心是用“图形化输入”页面把函数资产组织成模块/工作流，并一键导出用于生成与门禁。
+
+1. 函数（Offline / RAG 管理，`/offline/rag`）
+   - 目标：把本地代码库切分为可检索的函数资产。
+   - 结果：函数资产写入 `rag.sqlite3.functions`，包含 `code/doc_zh/inputs_json/outputs_json/embedding` 等。
+
+2. 模块（Offline / RAG 管理 或 Online / 图形化输入）
+   - 模块资产落盘：写入 `rag.sqlite3.modules`，其中 `nodes_json/edges_json` 存模块内节点与连线。
+   - 模块来源：可来自自动发现（discovered），也可来自图形化搭建发布（visual-builder）。
+
+3. 搭建 & 图形化（Online / 图形化输入，`/visual-builder`）
+   - 交互：拖拽函数/模块到画布，配置节点参数与结构化 IO（inputs/outputs），连线表达调用前后关系。
+   - 本地草稿：画布草稿会写入浏览器 localStorage（key：`builder:visual-builder:v1`），用于防刷新丢失。
+
+4. 导出（Online / 图形化输入，`/visual-builder`）
+   - 交互：点击“导出”，前端会拼装导出提示词（包含模块层级、函数/胶水源码块、连线关系、C++ 统一规范），并调用后端生成。
+   - 后端 API：`/py/orchestrator/generate`。
+   - 归档：导出成功后会写入档案事件 `orchestrator.generate`（`source=visual-builder`），payload 里包含 `prompt` 与 `code`。
+   - 持久化策略：为避免浏览器存储上限导致代码丢失，草稿仅保存 `lastExportEventId`，页面重新进入时会从档案回填导出代码。
+
+5. 检测（Online / 测试门禁，`/online/testing`）
+   - 输入：从档案选择刚刚导出的 `orchestrator.generate`（source 为 visual-builder）作为门禁输入源。
+   - 后端执行：同流程 1 的门禁阶段，会把生成结果落盘到 `gate-workspaces/` 并运行 compile/static/unit/coverage。
+   - 归档：写入 `gate.run`。
+
+6. 归档（贯穿全流程）
+   - 导出归档：`orchestrator.generate`（prompt + code + 画布 graph 等）。
+   - 检测归档：`gate.run`（证据链与结论）。
+   - 统一落盘：`archive.jsonl`。
 
 ### 5.4 阶段输入约束（重要）
 
 为保证证据链可追溯、避免选错输入导致不可复现，页面做了阶段约束：
+
+流程 1 约束：
 
 - 消歧：产出并入档 `cot.disambiguation`
 - 编排：输入源为 `cot.disambiguation`
 - 门禁：输入源为 `orchestrator.generate`
 - 发布：输入源为“门禁四项通过”的 `gate.run`
 
+流程 2 约束：
+
+- 导出：产出并入档 `orchestrator.generate`（`source=visual-builder`）
+- 检测：输入源为 `orchestrator.generate`
+
 ## 6. 运维与排错（落盘证据）
 
 - **档案回放**：查看 `archive.jsonl` 事件流，结合页面“档案管理”可快速定位输入与输出。
 - **RAG 数据**：查看 `rag.sqlite3`（functions/modules 表）验证函数是否入库、embedding 是否存在。
 - **门禁失败**：打开对应 `gate-workspaces/*` 工作区查看编译/单测日志；门禁聚合日志也会写入 `gate.run` 事件。
-
