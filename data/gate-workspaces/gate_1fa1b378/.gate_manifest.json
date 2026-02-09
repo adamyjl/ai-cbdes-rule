@@ -1,0 +1,24 @@
+{
+  "written_files": [
+    {
+      "path": "RoutingPlanning/TopologyMap/TopologyMap.c",
+      "bytes": 12480
+    },
+    {
+      "path": "SpeedPlanning/TrajectorySpeedInit/TrajectorySpeedInit.c",
+      "bytes": 7496
+    },
+    {
+      "path": "PlanningMain.c",
+      "bytes": 3394
+    },
+    {
+      "path": "RoutingPlanning/TopologyMap/TopologyMap.h",
+      "bytes": 2354
+    },
+    {
+      "path": "SpeedPlanning/TrajectorySpeedInit/TrajectorySpeedInit.h",
+      "bytes": 2218
+    }
+  ]
+}

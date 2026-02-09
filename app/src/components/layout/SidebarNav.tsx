@@ -16,7 +16,9 @@ const offline: NavItem[] = [
 
 const online: NavItem[] = [
   { to: '/online/graph-builder', label: '图形化搭建' },
+  { to: '/task-builder', label: '模块化搭建' },
   { to: '/online/task', label: '任务输入' },
+  { to: '/visual-builder', label: '图形化输入' },
   { to: '/online/routing', label: '路由消歧' },
   { to: '/online/orchestration', label: '函数编排与生成' },
   { to: '/online/testing', label: '检测测试门禁' },

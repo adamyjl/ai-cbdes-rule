@@ -1,23 +1,43 @@
 import { Button, Divider, Form, Input, Segmented, Space, Tabs, Typography, message } from 'antd'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { WorkflowEdge, WorkflowNode } from './workflowTypes'
-import { computeGraphSummary } from './graphUtils'
+import { computeGraphSummary, safeJsonKeys } from './graphUtils'
 
 export function WorkflowInspector(props: {
   nodes: WorkflowNode[]
   edges: WorkflowEdge[]
   selectedNodeId: string | null
+  selectedEdgeId: string | null
   onUpdateNode: (id: string, patch: Partial<WorkflowNode>) => void
   onRemoveNode: (id: string) => void
+  onRemoveEdge: (id: string) => void
   onRunTest: (node: WorkflowNode) => Promise<void>
   busy: boolean
 }) {
-  const { nodes, edges, selectedNodeId, onUpdateNode, onRemoveNode, onRunTest, busy } = props
+  const { nodes, edges, selectedNodeId, selectedEdgeId, onUpdateNode, onRemoveNode, onRemoveEdge, onRunTest, busy } = props
   const selectedNode = useMemo(() => nodes.find((n) => n.id === selectedNodeId) || null, [nodes, selectedNodeId])
-  const [view, setView] = useState<'summary' | 'node'>('summary')
+  const selectedEdge = useMemo(() => edges.find((e) => e.id === selectedEdgeId) || null, [edges, selectedEdgeId])
+  const nodeById = useMemo(() => new Map(nodes.map((n) => [n.id, n] as const)), [nodes])
+  const [view, setView] = useState<'summary' | 'node' | 'edge'>('summary')
+
+  useEffect(() => {
+    if (selectedEdgeId) setView('edge')
+    else if (selectedNodeId) setView('node')
+  }, [selectedEdgeId, selectedNodeId])
 
   const summary = useMemo(() => computeGraphSummary(nodes, edges), [nodes, edges])
   const summaryJson = useMemo(() => JSON.stringify(summary, null, 2), [summary])
+
+  const edgeDetail = useMemo(() => {
+    if (!selectedEdge) return null
+    const from = nodeById.get(selectedEdge.from) || null
+    const to = nodeById.get(selectedEdge.to) || null
+    if (!from || !to) return null
+    const fromOut = safeJsonKeys(from.outputsJson)
+    const toIn = safeJsonKeys(to.inputsJson)
+    const combined = Array.from(new Set([...fromOut, ...toIn]))
+    return { from, to, fromOut, toIn, combined }
+  }, [selectedEdge, nodeById])
 
   function copySummary() {
     void navigator.clipboard
@@ -34,7 +54,8 @@ export function WorkflowInspector(props: {
           onChange={(v) => setView(v as any)}
           options={[
             { label: '全图汇总', value: 'summary' },
-            { label: '节点属性', value: 'node' }
+            { label: '节点属性', value: 'node' },
+            { label: '连线属性', value: 'edge' }
           ]}
           block
         />
@@ -187,8 +208,72 @@ export function WorkflowInspector(props: {
             </Form>
           )
         ) : null}
+
+        {view === 'edge' ? (
+          !edgeDetail ? (
+            <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>选择画布中的连线以查看输入/输出。</Typography.Text>
+          ) : (
+            <div>
+              <Typography.Text style={{ color: 'rgba(244,244,245,0.85)' }}>起点</Typography.Text>
+              <br />
+              <Typography.Text style={{ color: 'rgba(244,244,245,0.6)' }}>{edgeDetail.from.display_name}</Typography.Text>
+              <Divider style={{ borderColor: 'rgba(63,63,70,0.6)' }} />
+              <Typography.Text style={{ color: 'rgba(244,244,245,0.85)' }}>终点</Typography.Text>
+              <br />
+              <Typography.Text style={{ color: 'rgba(244,244,245,0.6)' }}>{edgeDetail.to.display_name}</Typography.Text>
+              <Divider style={{ borderColor: 'rgba(63,63,70,0.6)' }} />
+
+              <Space direction="vertical" style={{ width: '100%' }} size={10}>
+                <div>
+                  <Typography.Text style={{ color: 'rgba(244,244,245,0.85)' }}>起点 Outputs (JSON)</Typography.Text>
+                  <div style={{ marginTop: 6 }}>
+                    <Input.TextArea value={edgeDetail.from.outputsJson} readOnly autoSize={{ minRows: 3, maxRows: 10 }} />
+                  </div>
+                </div>
+
+                <div>
+                  <Typography.Text style={{ color: 'rgba(244,244,245,0.85)' }}>终点 Inputs (JSON)</Typography.Text>
+                  <div style={{ marginTop: 6 }}>
+                    <Input.TextArea value={edgeDetail.to.inputsJson} readOnly autoSize={{ minRows: 3, maxRows: 10 }} />
+                  </div>
+                </div>
+
+                <div>
+                  <Typography.Text style={{ color: 'rgba(244,244,245,0.85)' }}>合并输入/输出键</Typography.Text>
+                  <div style={{ marginTop: 6, padding: 10, borderRadius: 10, border: '1px solid rgba(63,63,70,0.7)', background: 'rgba(24,24,27,0.5)' }}>
+                    <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>
+                      {edgeDetail.combined.length ? edgeDetail.combined.join(', ') : '(无可解析键)'}
+                    </Typography.Text>
+                  </div>
+                </div>
+
+                <div>
+                  <Typography.Text style={{ color: 'rgba(244,244,245,0.85)' }}>起点输出键</Typography.Text>
+                  <div style={{ marginTop: 6, padding: 10, borderRadius: 10, border: '1px solid rgba(63,63,70,0.7)', background: 'rgba(24,24,27,0.5)' }}>
+                    <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>
+                      {edgeDetail.fromOut.length ? edgeDetail.fromOut.join(', ') : '(无可解析键)'}
+                    </Typography.Text>
+                  </div>
+                </div>
+
+                <div>
+                  <Typography.Text style={{ color: 'rgba(244,244,245,0.85)' }}>终点输入键</Typography.Text>
+                  <div style={{ marginTop: 6, padding: 10, borderRadius: 10, border: '1px solid rgba(63,63,70,0.7)', background: 'rgba(24,24,27,0.5)' }}>
+                    <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>
+                      {edgeDetail.toIn.length ? edgeDetail.toIn.join(', ') : '(无可解析键)'}
+                    </Typography.Text>
+                  </div>
+                </div>
+              </Space>
+
+              <Divider style={{ borderColor: 'rgba(63,63,70,0.6)' }} />
+              <Button danger onClick={() => onRemoveEdge(selectedEdgeId as string)}>
+                删除连线
+              </Button>
+            </div>
+          )
+        ) : null}
       </Space>
     </div>
   )
 }
-

@@ -438,6 +438,9 @@ def materialize_generated_result(*, work_dir: Path, generated_result: str) -> Ga
         _write_text(p, content)
         written.append({'path': rel, 'bytes': len(content.encode('utf-8'))})
 
+    _ensure_dijkstra_topology_stubs(work_dir)
+    _fix_list_iterator_arithmetic(work_dir)
+
     ensure_gate_scaffold(root=work_dir)
 
     manifest = {
@@ -445,3 +448,134 @@ def materialize_generated_result(*, work_dir: Path, generated_result: str) -> Ga
     }
     _write_text(work_dir / '.gate_manifest.json', json.dumps(manifest, ensure_ascii=False, indent=2))
     return GateWorkspace(root=work_dir, files=written)
+
+
+def _fix_list_iterator_arithmetic(root: Path) -> None:
+    decl_re = re.compile(r'std::list\s*<[^>]+>\s*::\s*(?:const_)?iterator\s+([A-Za-z_][A-Za-z0-9_]*)')
+    inc_re = re.compile(r'^\s*#\s*include\s*<iterator>\s*$', re.M)
+    inc_line_re = re.compile(r'^\s*#\s*include\b', re.M)
+    for p in root.rglob('*.cpp'):
+        try:
+            txt = p.read_text(encoding='utf-8', errors='ignore')
+        except Exception:
+            continue
+        names = set(decl_re.findall(txt))
+        if not names:
+            continue
+        changed = False
+        for name in sorted(names, key=len, reverse=True):
+            pat = re.compile(rf'(^\s*){re.escape(name)}\s*=\s*{re.escape(name)}\s*\+\s*1\s*;\s*$', re.M)
+            if pat.search(txt):
+                txt = pat.sub(rf'\1std::advance({name}, 1);', txt)
+                changed = True
+        if not changed:
+            continue
+        if not inc_re.search(txt):
+            lines = txt.splitlines()
+            insert_at = 0
+            for i in range(min(len(lines), 80)):
+                if inc_line_re.match(lines[i]):
+                    insert_at = i + 1
+            if insert_at == 0:
+                insert_at = 0
+            lines[insert_at:insert_at] = ['#include <iterator>', '']
+            txt = '\n'.join(lines) + ('\n' if p.read_text(encoding='utf-8', errors='ignore').endswith('\n') else '')
+        _write_text(p, txt)
+
+
+def _ensure_dijkstra_topology_stubs(root: Path) -> None:
+    inc = root / 'Planning' / 'RoutingPlanning' / 'GridMethod' / 'Dijkstra' / 'include'
+    src = root / 'Planning' / 'RoutingPlanning' / 'GridMethod' / 'Dijkstra' / 'DijkstraMap' / 'src' / 'dijkstraTopologyMap.cpp'
+    if not src.exists():
+        return
+
+    dijkstra_h = inc / 'dijkstraTopologyMap.h'
+    loc_h = inc / 'localizationMapAnalysis.h'
+    if not dijkstra_h.exists():
+        _write_text(
+            dijkstra_h,
+            (
+                '#ifndef DIJKSTRA_TOPOLOGY_MAP_H\n'
+                '#define DIJKSTRA_TOPOLOGY_MAP_H\n'
+                '\n'
+                '#include <vector>\n'
+                '#include <list>\n'
+                '#include <queue>\n'
+                '#include <utility>\n'
+                '#include <string>\n'
+                '\n'
+                'typedef struct {\n'
+                '  double GaussX;\n'
+                '  double GaussY;\n'
+                '} GaussRoadPoint;\n'
+                '\n'
+                'typedef struct {\n'
+                '  int sucRoadID;\n'
+                '  int sucLaneID;\n'
+                '} LaneSuccessorId;\n'
+                '\n'
+                'typedef struct {\n'
+                '  int id;\n'
+                '  std::vector<LaneSuccessorId> successorId;\n'
+                '  std::vector<GaussRoadPoint> gaussRoadPoints;\n'
+                '} Lane;\n'
+                '\n'
+                'typedef struct Road {\n'
+                '  int id;\n'
+                '  std::vector<int> successorId;\n'
+                '  std::vector<Lane> lanes;\n'
+                '  int isInList;\n'
+                '  double xBegin;\n'
+                '  double xEnd;\n'
+                '  double yBegin;\n'
+                '  double yEnd;\n'
+                '  double length;\n'
+                '  std::vector<int> to;\n'
+                '  int father;\n'
+                '  double f;\n'
+                '  double g;\n'
+                '  double h;\n'
+                '  bool operator<(const Road& other) const { return f > other.f; }\n'
+                '} Road;\n'
+                '\n'
+                'typedef struct {\n'
+                '  std::vector<Road> roads;\n'
+                '  void mapAnalysis(const char* mapPath);\n'
+                '  void moduleSelfCheckPrint();\n'
+                '} Map;\n'
+                '\n'
+                'typedef struct Astar {\n'
+                '  Road* roadList;\n'
+                '  std::priority_queue<Road> openList;\n'
+                '  void initRoad(struct Astar* astar, int number, double xStart, double yStart, double xEnd, double yEnd, double length);\n'
+                '  void initLink(struct Astar* astar, int from, int to);\n'
+                '  void mapToAstar(const Map& m, struct Astar* astar);\n'
+                '  double calcH(int current, int end, Road* roadList);\n'
+                '  Road* findPath(int origin, int destination);\n'
+                '  int getPath(int origin, int destination, std::list<int>* path);\n'
+                '  int findLane(const Map& m, const std::list<int>& path, std::list<std::pair<int, int>>* pathLanes);\n'
+                '  void moduleSelfCheckPrint(const std::list<std::pair<int, int>>& pathLanes);\n'
+                '} Astar;\n'
+                '\n'
+                '#endif\n'
+            ),
+        )
+
+    if not loc_h.exists():
+        _write_text(
+            loc_h,
+            (
+                '#ifndef LOCALIZATION_MAP_ANALYSIS_H\n'
+                '#define LOCALIZATION_MAP_ANALYSIS_H\n'
+                '\n'
+                '#include "dijkstraTopologyMap.h"\n'
+                '#include <string>\n'
+                '\n'
+                'typedef struct { int dummy; } mapAnalysisPara;\n'
+                'typedef struct { std::string fileName; } mapAnalysisInput;\n'
+                'typedef struct { Map m; } mapAnalysisOutput;\n'
+                'void mapAnalysis(mapAnalysisPara& para, mapAnalysisInput& input, mapAnalysisOutput& output);\n'
+                '\n'
+                '#endif\n'
+            ),
+        )

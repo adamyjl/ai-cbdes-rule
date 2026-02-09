@@ -1,4 +1,15 @@
-export type AppModule = 'common' | 'perception' | 'planning' | 'decision' | 'localization' | 'control'
+export type AppModule =
+  | 'common'
+  | 'perception'
+  | 'prediction'
+  | 'planning'
+  | 'control'
+  | 'decision'
+  | 'learning'
+  | 'evaluation'
+  | 'localization'
+
+export type FunctionKind = 'node' | 'glue' | 'platform'
 
 export type RagQueryHit = {
   function_id: string
@@ -23,7 +34,13 @@ export type FunctionIndexItem = {
   signature: string
   display_name: string
   module: AppModule | string
+  module_source?: string
+  kind?: FunctionKind | string
+  kind_source?: string
   doc_zh: string
+  doc_en?: string
+  inputs_json?: string
+  outputs_json?: string
   embedded: number
   updated_at: string
 }
@@ -54,6 +71,49 @@ export type RagTestRunResponse = {
   duration_ms: number
   stdout: string
   stderr: string
+}
+
+export type RagModuleIndexJobStatus = {
+  job_id: string
+  root_dir: string
+  stage: string
+  started_at: string
+  updated_at: string
+  total_files: number
+  processed_files: number
+  current_file: string | null
+  total_candidates: number
+  processed_candidates: number
+  total_embeddings: number
+  processed_embeddings: number
+  percent: number
+  error: string | null
+  canceled: boolean
+}
+
+export type RagIndexedModuleItem = {
+  module_key: string
+  root_dir: string
+  entry_function_id: string
+  display_name: string
+  doc_zh: string
+  doc_en: string
+  inputs_json: string
+  outputs_json: string
+  nodes_json: string
+  edges_json: string
+  node_count: number
+  edge_count: number
+  source: string
+  embedded: number
+  updated_at: string
+}
+
+export type RagIndexedModulesResponse = {
+  total: number
+  limit: number
+  offset: number
+  items: RagIndexedModuleItem[]
 }
 
 export type ArchiveEvent = {
@@ -153,6 +213,78 @@ export async function ragScan(root_dir: string) {
   )
 }
 
+export async function ragStartModuleIndexJob(root_dir: string) {
+  return requestJson<{ ok: boolean; job_id: string }>('/py/rag/module-index-job', {
+    method: 'POST',
+    body: JSON.stringify({ root_dir })
+  })
+}
+
+export async function ragGetModuleIndexJob(job_id: string) {
+  return requestJson<{ ok: boolean; job?: RagModuleIndexJobStatus; error?: string }>(
+    `/py/rag/module-index-job/${encodeURIComponent(job_id)}`
+  )
+}
+
+export async function ragCancelModuleIndexJob(job_id: string) {
+  return requestJson<{ ok: boolean }>(`/py/rag/module-index-job/${encodeURIComponent(job_id)}/cancel`, {
+    method: 'POST'
+  })
+}
+
+export async function ragListIndexedModules(params: { root_dir?: string; q?: string; limit?: number; offset?: number }) {
+  const qs = new URLSearchParams()
+  if (params.root_dir) qs.set('root_dir', params.root_dir)
+  if (params.q) qs.set('q', params.q)
+  if (params.limit != null) qs.set('limit', String(params.limit))
+  if (params.offset != null) qs.set('offset', String(params.offset))
+  return requestJson<RagIndexedModulesResponse>(`/py/rag/indexed-modules?${qs.toString()}`)
+}
+
+export async function ragGetModule(module_key: string) {
+  return requestJson<{ ok: boolean; module?: RagIndexedModuleItem; error?: string }>(
+    `/py/rag/module?module_key=${encodeURIComponent(module_key)}`
+  )
+}
+
+export async function ragUpsertModule(req: { root_dir: string; module: any }) {
+  return requestJson<{ ok: boolean; module?: RagIndexedModuleItem; error?: string }>('/py/rag/module', {
+    method: 'PUT',
+    body: JSON.stringify({ root_dir: req.root_dir, module: req.module })
+  })
+}
+
+export async function ragDeleteModules(module_keys: string[]) {
+  return requestJson<{ ok: boolean; deleted: number }>('/py/rag/modules/delete', {
+    method: 'POST',
+    body: JSON.stringify({ module_keys })
+  })
+}
+
+export async function ragPublishModule(req: {
+  root_dir: string
+  graph: { nodes: any[]; edges: any[] }
+  module_key?: string
+  display_name_hint?: string
+  source?: string
+  similarity_threshold?: number
+}) {
+  return requestJson<{ ok: boolean; module?: any; replaced?: boolean; matched?: any; error?: string }>('/py/rag/publish-module', {
+    method: 'POST',
+    body: JSON.stringify(req)
+  })
+}
+
+export async function codegenGlue(req: { task?: string; from_node: any; to_node: any }) {
+  return requestJson<{ ok: boolean; glue_name?: string; doc_zh?: string; inputs_json?: any; outputs_json?: any; glue_code?: string; error?: string }>(
+    '/py/codegen/glue',
+    {
+      method: 'POST',
+      body: JSON.stringify(req)
+    }
+  )
+}
+
 export async function ragIndex(root_dir: string, opts?: { enrich?: boolean; max_functions?: number | null }) {
   return requestJson<{
     root_dir: string
@@ -236,6 +368,21 @@ export type RagBackfillDocsJob = {
   canceled: boolean
 }
 
+export type RagKindJobStatus = {
+  job_id: string
+  root_dir: string | null
+  stage: string
+  started_at: string
+  updated_at: string
+  total: number
+  processed: number
+  percent: number
+  current_function_id: string | null
+  current_file: string | null
+  error: string | null
+  canceled: boolean
+}
+
 export async function ragStartBackfillDocsJob(root_dir?: string | null, limit?: number) {
   return requestJson<{ ok: boolean; job_id: string }>(`/py/rag/backfill-docs-job`, {
     method: 'POST',
@@ -251,6 +398,25 @@ export async function ragGetBackfillDocsJob(job_id: string) {
 
 export async function ragCancelBackfillDocsJob(job_id: string) {
   return requestJson<{ ok: boolean }>(`/py/rag/backfill-docs-job/${encodeURIComponent(job_id)}/cancel`, {
+    method: 'POST'
+  })
+}
+
+export async function ragStartKindJob(root_dir?: string | null) {
+  return requestJson<{ ok: boolean; job_id: string }>(`/py/rag/kind-job`, {
+    method: 'POST',
+    body: JSON.stringify({ root_dir: root_dir ?? null })
+  })
+}
+
+export async function ragGetKindJob(job_id: string) {
+  return requestJson<{ ok: boolean; job?: RagKindJobStatus; error?: string }>(
+    `/py/rag/kind-job/${encodeURIComponent(job_id)}`
+  )
+}
+
+export async function ragCancelKindJob(job_id: string) {
+  return requestJson<{ ok: boolean }>(`/py/rag/kind-job/${encodeURIComponent(job_id)}/cancel`, {
     method: 'POST'
   })
 }
@@ -278,6 +444,7 @@ export async function ragListModules(root_dir?: string) {
 export async function ragListFunctions(params: {
   root_dir?: string
   module?: string
+  kind?: string
   q?: string
   limit?: number
   offset?: number
@@ -285,6 +452,7 @@ export async function ragListFunctions(params: {
   const qs = new URLSearchParams()
   if (params.root_dir) qs.set('root_dir', params.root_dir)
   if (params.module) qs.set('module', params.module)
+  if (params.kind) qs.set('kind', params.kind)
   if (params.q) qs.set('q', params.q)
   if (params.limit != null) qs.set('limit', String(params.limit))
   if (params.offset != null) qs.set('offset', String(params.offset))

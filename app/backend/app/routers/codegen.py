@@ -1,4 +1,5 @@
 from fastapi import APIRouter
+from pydantic import BaseModel
 
 from backend.app.schemas import (
     CodegenGenerateRequest,
@@ -7,10 +8,12 @@ from backend.app.schemas import (
     CodegenPlanResponse,
 )
 from backend.app.services.codegen_service import CodegenService
+from backend.app.services.glue_codegen_service import GlueCodegenService
 
 
 router = APIRouter(prefix="/codegen", tags=["codegen"])
 codegen_service = CodegenService()
+glue_service = GlueCodegenService()
 
 
 @router.post("/plan", response_model=CodegenPlanResponse)
@@ -24,3 +27,18 @@ def generate(req: CodegenGenerateRequest):
     patch = codegen_service.generate(req.task_id, req.plan_markdown)
     return CodegenGenerateResponse(task_id=req.task_id, patch_diff=patch)
 
+
+class GlueGenerateRequest(BaseModel):
+    task: str = ''
+    from_node: dict
+    to_node: dict
+
+
+@router.post('/glue')
+def generate_glue(req: GlueGenerateRequest):
+    try:
+        out = glue_service.generate_glue(task=str(req.task or ''), from_node=req.from_node, to_node=req.to_node)
+        return {'ok': True, **out}
+    except Exception as e:
+        msg = str(e) or type(e).__name__
+        return {'ok': False, 'error': msg}

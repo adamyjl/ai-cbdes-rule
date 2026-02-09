@@ -100,3 +100,7 @@ graph TD
 
 - 文档目录：`.trae/documents/`
 - 总体技术架构（实现对齐）：[architecture.md](../.trae/documents/architecture.md)
+
+同时补充一份“以当前可运行实现为准”的系统设计说明（包含页面交互与实际持久化数据形态）：
+
+- 系统设计说明：[SYSTEM_DESIGN.md](SYSTEM_DESIGN.md)

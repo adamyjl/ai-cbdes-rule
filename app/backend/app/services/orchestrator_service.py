@@ -165,6 +165,172 @@ def _looks_like_cpp_source(content: str) -> bool:
     return signals >= 2
 
 
+def _normalize_rel_posix_path(p: str) -> str:
+    p = (p or '').replace('\\', '/').strip()
+    parts: list[str] = []
+    for part in p.split('/'):
+        if not part or part == '.':
+            continue
+        if part == '..':
+            if parts:
+                parts.pop()
+            continue
+        parts.append(part)
+    return '/'.join(parts)
+
+
+def _find_missing_quote_includes(files: list[dict]) -> list[dict]:
+    path_set = set()
+    normalized_files: list[dict] = []
+    for f in files or []:
+        if not isinstance(f, dict):
+            continue
+        rel = _normalize_rel_posix_path(str(f.get('path') or ''))
+        if not rel:
+            continue
+        normalized_files.append({'path': rel, 'content': str(f.get('content') or '')})
+        path_set.add(rel)
+
+    missing = []
+    inc_re = re.compile(r'^\s*#\s*include\s*"([^"]+)"', re.M)
+    for f in normalized_files:
+        fpath = str(f.get('path') or '')
+        content = str(f.get('content') or '')
+        base = '/'.join(fpath.split('/')[:-1])
+        for inc in inc_re.findall(content):
+            inc = (inc or '').replace('\\', '/').strip()
+            if not inc:
+                continue
+            if inc.startswith('/') or re.match(r'^[a-zA-Z]:', inc):
+                continue
+            expected = _normalize_rel_posix_path(f'{base}/{inc}' if base else inc)
+            if expected and expected not in path_set:
+                missing.append({'from': fpath, 'include': inc, 'expected': expected})
+    return missing
+
+
+def _rel_include(from_path: str, to_path: str) -> str:
+    from_path = _normalize_rel_posix_path(from_path)
+    to_path = _normalize_rel_posix_path(to_path)
+    if not from_path or not to_path:
+        return to_path
+    from_dir = '/'.join(from_path.split('/')[:-1])
+    if not from_dir:
+        return to_path.split('/')[-1]
+    a = from_dir.split('/') if from_dir else []
+    b = to_path.split('/')
+    i = 0
+    while i < len(a) and i < len(b) and a[i] == b[i]:
+        i += 1
+    up = ['..'] * (len(a) - i)
+    down = b[i:]
+    rel = '/'.join(up + down)
+    return rel or to_path.split('/')[-1]
+
+
+def _auto_inject_includes(files: list[dict]) -> list[dict]:
+    normalized: list[dict] = []
+    for f in files or []:
+        if not isinstance(f, dict):
+            continue
+        p = _normalize_rel_posix_path(str(f.get('path') or ''))
+        if not p:
+            continue
+        normalized.append({'path': p, 'language': str(f.get('language') or 'cpp'), 'content': str(f.get('content') or '')})
+
+    type_providers: dict[str, str] = {}
+    type_def_re = re.compile(r'typedef\s+struct\s*\{[\s\S]*?\}\s*([A-Za-z_][A-Za-z0-9_]*)\s*;', re.M)
+    for f in normalized:
+        p = str(f.get('path') or '')
+        if not (p.endswith('.h') or p.endswith('.hpp')):
+            continue
+        txt = str(f.get('content') or '')
+        for m in type_def_re.finditer(txt):
+            name = str(m.group(1) or '').strip()
+            if name and name not in type_providers:
+                type_providers[name] = p
+
+    std_needles = [
+        ('list', re.compile(r'\bstd::list\b|\blist\s*<', re.M), '<list>'),
+        ('string', re.compile(r'\bstd::string\b|\bstring\b', re.M), '<string>'),
+        ('map', re.compile(r'\bstd::map\b|\bmap\s*<', re.M), '<map>'),
+        ('unordered_map', re.compile(r'\bstd::unordered_map\b|\bunordered_map\s*<', re.M), '<unordered_map>'),
+        ('set', re.compile(r'\bstd::set\b|\bset\s*<', re.M), '<set>'),
+        ('unordered_set', re.compile(r'\bstd::unordered_set\b|\bunordered_set\s*<', re.M), '<unordered_set>'),
+        ('queue', re.compile(r'\bstd::queue\b|\bqueue\s*<', re.M), '<queue>'),
+        ('stack', re.compile(r'\bstd::stack\b|\bstack\s*<', re.M), '<stack>'),
+        ('pair', re.compile(r'\bstd::pair\b|\bpair\s*<', re.M), '<utility>'),
+        ('size_t', re.compile(r'\bsize_t\b', re.M), '<cstddef>'),
+    ]
+    include_angle_re = re.compile(r'^\s*#\s*include\s*<([^>]+)>', re.M)
+    include_quote_re = re.compile(r'^\s*#\s*include\s*"([^"]+)"', re.M)
+
+    def _has_type_definition(txt: str, name: str) -> bool:
+        if re.search(rf'\btypedef\s+struct\s*\{{[\s\S]*?\}}\s*{re.escape(name)}\s*;', txt, re.M):
+            return True
+        if re.search(rf'\bstruct\s+{re.escape(name)}\b', txt):
+            return True
+        if re.search(rf'\bclass\s+{re.escape(name)}\b', txt):
+            return True
+        return False
+
+    out: list[dict] = []
+    for f in normalized:
+        p = str(f.get('path') or '')
+        txt = str(f.get('content') or '')
+        existing_angle = set(include_angle_re.findall(txt))
+        existing_quote = set(_normalize_rel_posix_path(x) for x in include_quote_re.findall(txt))
+
+        need_angle: list[str] = []
+        for _key, rx, header in std_needles:
+            if rx.search(txt):
+                hname = header.strip('<>')
+                if hname not in existing_angle:
+                    need_angle.append(header)
+
+        need_quote: list[str] = []
+        for name, provider in type_providers.items():
+            if name == 'main':
+                continue
+            if not re.search(rf'\b{re.escape(name)}\b', txt):
+                continue
+            if _has_type_definition(txt, name):
+                continue
+            if provider == p:
+                continue
+            rel = _rel_include(p, provider)
+            rel_norm = _normalize_rel_posix_path(rel)
+            if rel_norm and rel_norm not in existing_quote:
+                need_quote.append(rel)
+
+        if not need_angle and not need_quote:
+            out.append(f)
+            continue
+
+        lines = txt.splitlines()
+        insert_at = 0
+        for i in range(min(len(lines), 80)):
+            if re.match(r'^\s*#\s*include\b', lines[i]):
+                insert_at = i + 1
+        if insert_at == 0:
+            for i in range(min(len(lines), 80)):
+                if re.match(r'^\s*#\s*define\b', lines[i]):
+                    insert_at = i + 1
+                    break
+
+        extra = []
+        for h in need_angle:
+            extra.append(f'#include {h}')
+        for rel in need_quote:
+            extra.append(f'#include "{rel}"')
+        if extra:
+            lines[insert_at:insert_at] = extra + ['']
+        f2 = dict(f)
+        f2['content'] = '\n'.join(lines) + ('\n' if txt.endswith('\n') else '')
+        out.append(f2)
+    return out
+
+
 class OrchestratorService:
     def generate(self, *, prompt: str) -> dict:
         out = self.generate_cpp_code(prompt=prompt)
@@ -319,5 +485,88 @@ class OrchestratorService:
                     log2 = '模型未返回可验证的 C/C++ 源码输出（可能回显了提示词），已回退到最小可编译示例。'
                 log = log2
                 key_points = key_points2 or key_points
+
+        extracted_final = _extract_files_from_markdown(code_md)
+        missing_includes = _find_missing_quote_includes(extracted_final)
+        if missing_includes:
+            repair_payload = {
+                'task': '你是智能驾驶代码生产线的 C/C++ 代码生成器。给定现有文件集合与缺失的 include 引用，请补全缺失文件并修正 include 路径，使输出文件集合可自洽编译。',
+                'input': {
+                    'prompt': merged,
+                    'missing_includes': missing_includes,
+                    'current_files': [
+                        {
+                            'path': str(f.get('path') or '').strip(),
+                            'language': str(f.get('language') or 'cpp').strip() or 'cpp',
+                            'content': str(f.get('content') or '').strip(),
+                        }
+                        for f in extracted_final
+                        if isinstance(f, dict)
+                    ],
+                },
+                'output_schema': {
+                    'files': [
+                        {
+                            'path': 'string (相对路径)',
+                            'language': 'string (cpp 或 c)',
+                            'content': 'string (纯源码文本，不要 Markdown，不要解释文字)',
+                        }
+                    ],
+                    'key_points': 'string[]',
+                    'log': 'string',
+                },
+                'rules': [
+                    '只输出 JSON',
+                    'files 至少包含 1 个文件',
+                    '必须包含 current_files 中的所有文件（内容可按需修正，但不得删掉）',
+                    '必须补齐 missing_includes 列表中 expected 对应的文件，或修改 include 使其指向你输出的真实路径',
+                    '严禁复述/粘贴输入提示词、规范或 current_files 的非源码信息',
+                    'content 只能是纯源码，不得包含 ``` 或 ### 或 Markdown 标题',
+                ],
+            }
+
+            def _call_repair():
+                return client.chat.completions.create(
+                    model=model,
+                    temperature=0,
+                    messages=[
+                        {'role': 'system', 'content': '输出 JSON。不要输出其它内容。'},
+                        {'role': 'user', 'content': json.dumps(repair_payload, ensure_ascii=False)},
+                    ],
+                    response_format={'type': 'json_object'},
+                    extra_body={'enable_thinking': False},
+                )
+
+            try:
+                res3 = llm_call(_call_repair)
+                text3 = (res3.choices[0].message.content or '').strip()
+                obj3 = _parse_json(text3)
+                files3: list[dict] = []
+                if isinstance(obj3.get('files'), list):
+                    for it in obj3.get('files'):
+                        if not isinstance(it, dict):
+                            continue
+                        files3.append(
+                            {
+                                'path': str(it.get('path') or '').strip() or 'main.cpp',
+                                'language': str(it.get('language') or 'cpp').strip() or 'cpp',
+                                'content': str(it.get('content') or '').strip(),
+                            }
+                        )
+                code_md3 = _format_files_to_markdown(files3)
+                if _is_valid_output(code_md3):
+                    extracted3 = _extract_files_from_markdown(code_md3)
+                    missing3 = _find_missing_quote_includes(extracted3)
+                    if not missing3:
+                        code_md = code_md3
+                        key_points = _clean_str_list(obj3.get('key_points')) or key_points
+                        log = str(obj3.get('log') or '').strip() or log
+            except Exception:
+                pass
+
+        extracted_final2 = _extract_files_from_markdown(code_md)
+        fixed_files = _auto_inject_includes(extracted_final2)
+        if fixed_files:
+            code_md = _format_files_to_markdown(fixed_files)
 
         return {'code': code_md, 'key_points': key_points, 'log': log or None}

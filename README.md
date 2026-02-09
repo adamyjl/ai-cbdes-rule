@@ -85,6 +85,7 @@ https://www.ai-cbdes-rule.com/online/task
 更细粒度的实现说明：
 - 平台实现与本地启动：[app/README.md](app/README.md)
 - 文档总览与架构图：[app/docs/README.md](app/docs/README.md)
+- 系统设计说明（页面交互 + 实际持久化）：[app/docs/SYSTEM_DESIGN.md](app/docs/SYSTEM_DESIGN.md)
 
 ---
 
@@ -110,6 +111,8 @@ npm run dev
 ```
 
 打开 `http://localhost:5173`。
+
+推荐先按系统设计说明跑通闭环流程：见 [app/docs/SYSTEM_DESIGN.md](app/docs/SYSTEM_DESIGN.md)。
 
 或使用一键脚本（Windows / PowerShell）：
 
@@ -192,4 +195,3 @@ powershell -ExecutionPolicy Bypass -File .\.deploy\windows-server\deploy.ps1 `
 <div align="center">
 <img width="1200" height="475" alt="GHBanner" src="./resource/test.png" />
 </div>
-

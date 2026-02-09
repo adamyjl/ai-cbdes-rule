@@ -36,6 +36,10 @@
 
 * **档案库**：本地 JSONL（`archive.jsonl`），追加写入事件流（例如 `rag.query`、`workflow.saved`）
 
+* **发布模块库**：本地 JSON（`release_modules.json`），用于按版本保存发布产物的模块元数据
+
+* **门禁工作区**：文件夹（`gate-workspaces/`），每次门禁 Job 会生成隔离的可编译工程并收集证据链
+
 ### 1.4 AI/LLM
 
 * 通过 `openai` Python SDK 调用阿里云百炼 OpenAI 兼容接口（DashScope compatible-mode）
@@ -105,6 +109,54 @@ graph TD
 
 * 后端用 query 触发 RAG 检索并返回关联函数集合
 
+### 3.6 在线代码生产线：消歧 → 编排生成 → 门禁 → 发布
+
+* **路由消歧（CoT）**：对风险/缺失项问答，收敛目标/约束/子任务，产出 `cot.disambiguation` 并入档
+
+* **编排生成（Orchestrator）**：以 `cot.disambiguation` 为输入源，拼装最终提示词并生成多文件 C++ 代码，产出 `orchestrator.generate` 并入档
+
+* **测试门禁（Gate）**：以 `orchestrator.generate` 为输入源，执行 compile/static/unit/coverage 四步检测并收集证据链，产出 `gate.run` 并入档
+
+* **发布（Release）**：只允许选择门禁通过的 `gate.run`，执行产物切分、回写索引与发布归档，产出 `release.publish`
+
+### 3.7 阶段输入约束（可追溯保证）
+
+为减少选错输入导致结果不可复现，在线页面对“可选档案事件”做了阶段约束：
+
+* 消歧：产出并入档 `cot.disambiguation`
+* 编排：输入源为 `cot.disambiguation`
+* 门禁：输入源为 `orchestrator.generate`
+* 发布：输入源为“门禁四项通过”的 `gate.run`
+
+## 4. Data Model (Actual Persistence)
+
+本节以当前实现为准，给出实际落盘的数据形态与关键字段。
+
+### 4.1 Data Directory
+
+默认数据目录为 `LOCALAPPDATA/ai-cbdes-rule/data`，可用 `AI_CBDES_DATA_DIR` 覆盖。实现见 `backend/app/services/data_dir.py`。
+
+### 4.2 Archive (JSONL)
+
+档案事件按 JSON Lines 追加写入 `archive.jsonl`。每条事件结构为：`{id,type,payload,ts}`。实现见 `backend/app/services/archive_service.py`。
+
+### 4.3 RAG Store (SQLite)
+
+RAG 索引库为 `rag.sqlite3`，核心表：
+
+* `functions`：函数资产（含 `code/doc_zh/inputs_json/outputs_json/embedding(BLOB)/embedding_dim`）
+* `modules`：模块资产（含 `nodes_json/edges_json` 用于图形化搭建与复现）
+
+建表语句见 `backend/app/services/rag_store.py`。
+
+### 4.4 Release Store (JSON)
+
+发布模块库为 `release_modules.json`（JSON 数组），按 `module_key` upsert，支持按 `version` 查询。实现见 `backend/app/services/release_module_store.py`。
+
+### 4.5 Gate Workspaces (Filesystem)
+
+门禁在 `gate-workspaces/` 下创建隔离目录，把生成结果按 Markdown 多文件格式落盘并生成脚本/scaffold，然后执行编译/单测等检测。落盘与 scaffold 见 `backend/app/services/gate_workspace.py`。
+
 ## 4. Directory Structure
 
 ```
@@ -145,4 +197,3 @@ AI-CBDES-Rule/
 ## 5. Deployment Notes
 
 * 前端可部署到静态站点（例如 Vercel）；但 RAG 索引依赖本地文件系统，完整在线化需要额外的云端后端与代码仓库存储方案。
-

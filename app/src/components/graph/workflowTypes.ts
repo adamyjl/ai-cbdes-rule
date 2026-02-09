@@ -3,6 +3,7 @@ export type WorkflowNode = {
   function_id: string
   display_name: string
   module: string
+  kind?: 'node' | 'glue' | 'platform' | string
   file_path: string
   signature?: string
   x: number
@@ -12,12 +13,14 @@ export type WorkflowNode = {
   paramsJson: string
   testCwd: string
   testCmd: string
+  hidden?: boolean
 }
 
 export type WorkflowEdge = {
   id: string
   from: string
   to: string
+  hidden?: boolean
 }
 
 export type WorkflowDraft = {
@@ -34,4 +37,3 @@ export type GraphSummary = {
   globalOutputs: Array<{ nodeId: string; nodeName: string; keys: string[] }>
   connections: Array<{ from: { nodeId: string; nodeName: string }; to: { nodeId: string; nodeName: string } }>
 }
-

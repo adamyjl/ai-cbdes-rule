@@ -6,6 +6,8 @@ import { SftEvolutionPage } from './pages/offline/SftEvolutionPage'
 import { TaskInputPage } from './pages/online/TaskInputPage'
 import { CotRoutingPage } from './pages/online/CotRoutingPage'
 import { GraphBuilderPage } from './pages/online/GraphBuilderPage'
+import { TaskBuilderPage } from './pages/online/TaskBuilderPage'
+import { VisualBuilderPage } from './pages/online/VisualBuilderPage'
 import { FunctionOrchestrationPage } from './pages/online/FunctionOrchestrationPage'
 import { TestGatePage } from './pages/online/TestGatePage'
 import { ReleasePage } from './pages/online/ReleasePage'
@@ -26,6 +28,9 @@ export default function App() {
         <Route path="/online/orchestration" element={<FunctionOrchestrationPage />} />
         <Route path="/online/testing" element={<TestGatePage />} />
         <Route path="/online/release" element={<ReleasePage />} />
+
+        <Route path="/task-builder" element={<TaskBuilderPage />} />
+        <Route path="/visual-builder" element={<VisualBuilderPage />} />
 
         <Route path="*" element={<Navigate to="/offline/rag" replace />} />
       </Routes>

@@ -65,6 +65,46 @@ def cancel_backfill_docs_job(job_id: str):
     return rag_service.cancel_backfill_docs_job(job_id)
 
 
+class KindJobRequest(BaseModel):
+    root_dir: str | None = None
+
+
+@router.post('/kind-job')
+def start_kind_job(req: KindJobRequest):
+    return rag_service.start_kind_job(root_dir=req.root_dir)
+
+
+@router.get('/kind-job/{job_id}')
+def get_kind_job(job_id: str):
+    return rag_service.get_kind_job(job_id)
+
+
+@router.post('/kind-job/{job_id}/cancel')
+def cancel_kind_job(job_id: str):
+    return rag_service.cancel_kind_job(job_id)
+
+
+class PublishModuleRequest(BaseModel):
+    root_dir: str
+    graph: dict
+    module_key: str | None = None
+    display_name_hint: str | None = None
+    source: str | None = None
+    similarity_threshold: float = 0.92
+
+
+@router.post('/publish-module')
+def publish_module(req: PublishModuleRequest):
+    return rag_service.publish_module(
+        root_dir=req.root_dir,
+        graph=req.graph,
+        module_key=req.module_key,
+        display_name_hint=str(req.display_name_hint or ''),
+        source=str(req.source or 'builder'),
+        similarity_threshold=float(req.similarity_threshold or 0.92),
+    )
+
+
 @router.post("/query", response_model=RagQueryResponse)
 def query(req: RagQueryRequest):
     hits = rag_service.query(req.query, req.top_k, module=req.module)
@@ -100,11 +140,12 @@ def list_modules(root_dir: str | None = None):
 def list_functions(
     root_dir: str | None = None,
     module: str | None = None,
+    kind: str | None = None,
     q: str | None = None,
     limit: int = 200,
     offset: int = 0,
 ):
-    return rag_service.list_functions(root_dir=root_dir, module=module, q=q, limit=limit, offset=offset)
+    return rag_service.list_functions(root_dir=root_dir, module=module, kind=kind, q=q, limit=limit, offset=offset)
 
 
 class SaveSourceRequest(BaseModel):
@@ -153,3 +194,56 @@ class DeleteByRootDirRequest(BaseModel):
 @router.post('/functions/delete-by-root')
 def delete_by_root_dir(req: DeleteByRootDirRequest):
     return rag_service.delete_by_root_dir(root_dir=req.root_dir)
+
+
+class ModuleIndexRequest(BaseModel):
+    root_dir: str
+
+
+@router.post('/module-index-job')
+def start_module_index_job(req: ModuleIndexRequest):
+    return rag_service.start_module_index_job(req.root_dir)
+
+
+@router.get('/module-index-job/{job_id}')
+def get_module_index_job(job_id: str):
+    return rag_service.get_module_index_job(job_id)
+
+
+@router.post('/module-index-job/{job_id}/cancel')
+def cancel_module_index_job(job_id: str):
+    return rag_service.cancel_module_index_job(job_id)
+
+
+@router.get('/indexed-modules')
+def list_indexed_modules(
+    root_dir: str | None = None,
+    q: str | None = None,
+    limit: int = 200,
+    offset: int = 0,
+):
+    return rag_service.list_indexed_modules(root_dir=root_dir, q=q, limit=limit, offset=offset)
+
+
+@router.get('/module')
+def get_module(module_key: str):
+    return rag_service.get_module(module_key)
+
+
+class UpsertModuleRequest(BaseModel):
+    root_dir: str
+    module: dict
+
+
+@router.put('/module')
+def upsert_module(req: UpsertModuleRequest):
+    return rag_service.upsert_module(module=req.module, root_dir=req.root_dir)
+
+
+class DeleteModulesRequest(BaseModel):
+    module_keys: list[str] = []
+
+
+@router.post('/modules/delete')
+def delete_modules(req: DeleteModulesRequest):
+    return rag_service.delete_modules(module_keys=req.module_keys)

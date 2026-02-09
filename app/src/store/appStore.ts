@@ -14,6 +14,7 @@ export type TaskDraft = {
   generationQuestion: string
   selectedFunctionIds: string[]
   selectedWorkflowId: string | null
+  selectedModuleKeys: string[]
 }
 
 type AppState = {
@@ -31,7 +32,8 @@ export const useAppStore = create<AppState>((set) => ({
     outputSpec: '{\n  "output": ""\n}',
     generationQuestion: '',
     selectedFunctionIds: [],
-    selectedWorkflowId: null
+    selectedWorkflowId: null,
+    selectedModuleKeys: []
   },
   setTaskDraft: (patch) =>
     set((s) => ({

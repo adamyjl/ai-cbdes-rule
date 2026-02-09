@@ -19,6 +19,7 @@
 
 更多说明：
 - 项目说明与整体流程：[docs/README.md](docs/README.md)
+- 系统设计说明（页面交互 + 实际持久化）：[docs/SYSTEM_DESIGN.md](docs/SYSTEM_DESIGN.md)
 - 开发者扩展指南：[docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)
 - PRD/技术架构/页面设计（更详细）：[.trae/documents](.trae/documents)
 

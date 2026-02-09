@@ -15,6 +15,7 @@ export function FunctionIndexBrowser(props: Props) {
   const [modules, setModules] = useState<RagModulesResponse | null>(null)
   const [functions, setFunctions] = useState<RagFunctionsResponse | null>(null)
   const [selectedModule, setSelectedModule] = useState<string | undefined>(undefined)
+  const [selectedKind, setSelectedKind] = useState<string | undefined>(undefined)
   const [q, setQ] = useState('')
   const [page, setPage] = useState(1)
   const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([])
@@ -45,6 +46,7 @@ export function FunctionIndexBrowser(props: Props) {
         ragListFunctions({
           root_dir: effectiveRootDir,
           module: selectedModule,
+          kind: selectedKind,
           q: q || undefined,
           limit: pageSize,
           offset: (page - 1) * pageSize
@@ -63,11 +65,11 @@ export function FunctionIndexBrowser(props: Props) {
 
   useEffect(() => {
     setPage(1)
-  }, [selectedModule, q])
+  }, [selectedModule, selectedKind, q])
 
   useEffect(() => {
     void load()
-  }, [selectedModule, q, page, filterByRootDir])
+  }, [selectedModule, selectedKind, q, page, filterByRootDir])
 
   const moduleOptions = useMemo(() => {
     const opts = [{ value: '', label: '全部模块' }]
@@ -86,6 +88,17 @@ export function FunctionIndexBrowser(props: Props) {
           key: 'module',
           width: 130,
           render: (v: string) => <Badge color="geekblue" text={v} />
+        },
+        {
+          title: '分类',
+          dataIndex: 'kind',
+          key: 'kind',
+          width: 110,
+          render: (v: string) => {
+            const k = String(v || 'glue')
+            const color = k === 'node' ? 'green' : k === 'platform' ? 'purple' : 'default'
+            return <Badge color={color as any} text={k} />
+          }
         },
         {
           title: '函数',
@@ -185,6 +198,17 @@ export function FunctionIndexBrowser(props: Props) {
             value={selectedModule ?? ''}
             onChange={(v) => setSelectedModule(v || undefined)}
             options={moduleOptions}
+          />
+          <Select
+            style={{ width: 200 }}
+            value={selectedKind ?? ''}
+            onChange={(v) => setSelectedKind(v || undefined)}
+            options={[
+              { value: '', label: '全部分类' },
+              { value: 'node', label: 'node（算法/关键业务）' },
+              { value: 'glue', label: 'glue（工程胶水）' },
+              { value: 'platform', label: 'platform（基础设施）' }
+            ]}
           />
           <Input
             style={{ width: 360 }}

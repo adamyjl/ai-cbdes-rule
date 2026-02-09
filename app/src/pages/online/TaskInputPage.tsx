@@ -2,9 +2,10 @@ import { PageScaffold } from '../PageScaffold'
 import { Button, Card, Divider, Form, Input, Popconfirm, Select, Space, Table, Tabs, Typography, message } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '../../store/appStore'
-import { archiveList, ragListFunctions, ragListModules, taskAnalyze } from '../../utils/api'
+import { archiveList, ragListFunctions, ragListIndexedModules, ragListModules, taskAnalyze } from '../../utils/api'
 import type { TaskAnalysisHit } from '../../utils/api'
 import { FunctionDetailDrawer } from '../../components/rag/FunctionDetailDrawer'
+import { ModuleDetailDrawer } from '../../components/rag/ModuleDetailDrawer'
 import { useArchiveStore } from '../../store/archiveStore'
 
 const TASK_INPUT_STORAGE_KEY = 'online:task_input_state:v1'
@@ -19,7 +20,8 @@ function emptyTaskDraft() {
     outputSpec: '{\n  "output": ""\n}',
     generationQuestion: '',
     selectedFunctionIds: [],
-    selectedWorkflowId: null
+    selectedWorkflowId: null,
+    selectedModuleKeys: []
   }
 }
 
@@ -94,7 +96,13 @@ export function TaskInputPage() {
 
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [drawerFunctionId, setDrawerFunctionId] = useState<string | null>(null)
+  const [moduleDrawerOpen, setModuleDrawerOpen] = useState(false)
+  const [moduleDrawerKey, setModuleDrawerKey] = useState<string | null>(null)
   const [hydrated, setHydrated] = useState(false)
+
+  const [indexedModulesBusy, setIndexedModulesBusy] = useState(false)
+  const [indexedModulesQ, setIndexedModulesQ] = useState('')
+  const [indexedModules, setIndexedModules] = useState<any[]>([])
 
   useEffect(() => {
     const saved = loadTaskInputState()
@@ -160,6 +168,23 @@ export function TaskInputPage() {
   }, [rootDir])
 
   useEffect(() => {
+    const t = window.setTimeout(() => {
+      void (async () => {
+        setIndexedModulesBusy(true)
+        try {
+          const res = await ragListIndexedModules({ root_dir: rootDir, q: indexedModulesQ || undefined, limit: 200, offset: 0 })
+          setIndexedModules(res.items || [])
+        } catch {
+          setIndexedModules([])
+        } finally {
+          setIndexedModulesBusy(false)
+        }
+      })()
+    }, 250)
+    return () => window.clearTimeout(t)
+  }, [rootDir, indexedModulesQ])
+
+  useEffect(() => {
     void (async () => {
       setFnLoading(true)
       try {
@@ -170,7 +195,13 @@ export function TaskInputPage() {
           limit: 60,
           offset: fnOffset
         })
-        setFnItems(res.items || [])
+        const filtered = (res.items || []).filter((it: any) => {
+          const s = Number(it?.start_line)
+          const e = Number(it?.end_line)
+          if (Number.isFinite(s) && Number.isFinite(e)) return e - s + 1 >= 2
+          return true
+        })
+        setFnItems(filtered)
         setFnTotal(Number(res.total || 0))
       } catch (e) {
         message.error(e instanceof Error ? e.message : '加载函数库失败')
@@ -319,6 +350,58 @@ export function TaskInputPage() {
                     <Typography.Text style={{ color: 'rgba(244,244,245,0.55)' }}>
                       说明：当前仅保存/引用模块结构摘要，后续可扩展为可执行工作流。
                     </Typography.Text>
+
+                    <Divider style={{ borderColor: 'rgba(63,63,70,0.6)', margin: '8px 0' }} />
+                    <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>来自 RAG 模块库（已索引）</Typography.Text>
+                    <Input value={indexedModulesQ} onChange={(e) => setIndexedModulesQ(e.target.value)} placeholder="搜索模块" allowClear />
+                    <Table
+                      size="small"
+                      rowKey="module_key"
+                      loading={indexedModulesBusy}
+                      pagination={{ pageSize: 8 }}
+                      columns={[
+                        { title: '模块', dataIndex: 'display_name', key: 'display_name', ellipsis: true },
+                        { title: 'Key', dataIndex: 'module_key', key: 'module_key', width: 120, ellipsis: true },
+                        {
+                          title: '操作',
+                          key: 'op',
+                          width: 120,
+                          render: (_: any, r: any) => (
+                            <Space size={6}>
+                              <Button
+                                size="small"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setModuleDrawerKey(String(r.module_key))
+                                  setModuleDrawerOpen(true)
+                                }}
+                              >
+                                详情
+                              </Button>
+                              <Button
+                                size="small"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  const key = String(r.module_key)
+                                  const next = Array.from(new Set([...(taskDraft.selectedModuleKeys || []), key]))
+                                  setTaskDraft({ selectedModuleKeys: next })
+                                  message.success('已加入工单')
+                                }}
+                              >
+                                加入
+                              </Button>
+                            </Space>
+                          )
+                        }
+                      ]}
+                      dataSource={indexedModules}
+                      onRow={(r: any) => ({
+                        onClick: () => {
+                          setModuleDrawerKey(String(r.module_key))
+                          setModuleDrawerOpen(true)
+                        }
+                      })}
+                    />
                   </Space>
                 )
               }
@@ -407,6 +490,44 @@ export function TaskInputPage() {
               <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>
                 {taskDraft.selectedWorkflowId || '-'}
               </Typography.Text>
+            </Form.Item>
+
+            <Form.Item label="已加入模块（RAG 模块库）">
+              <Space direction="vertical" style={{ width: '100%' }}>
+                {(taskDraft.selectedModuleKeys || []).length === 0 ? (
+                  <Typography.Text style={{ color: 'rgba(244,244,245,0.55)' }}>尚未加入模块</Typography.Text>
+                ) : (
+                  (taskDraft.selectedModuleKeys || []).slice(0, 30).map((mk) => (
+                    <div key={mk} className="flex items-start justify-between gap-3" style={{ width: '100%' }}>
+                      <Typography.Text
+                        style={{ color: 'rgba(244,244,245,0.8)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', flex: 1 }}
+                        copyable={{ text: mk }}
+                      >
+                        {mk}
+                      </Typography.Text>
+                      <Space size={6}>
+                        <Button
+                          size="small"
+                          onClick={() => {
+                            setModuleDrawerKey(String(mk))
+                            setModuleDrawerOpen(true)
+                          }}
+                        >
+                          详情
+                        </Button>
+                        <Button
+                          size="small"
+                          onClick={() =>
+                            setTaskDraft({ selectedModuleKeys: (taskDraft.selectedModuleKeys || []).filter((x) => x !== mk) })
+                          }
+                        >
+                          移除
+                        </Button>
+                      </Space>
+                    </div>
+                  ))
+                )}
+              </Space>
             </Form.Item>
           </Form>
         </Card>
@@ -563,6 +684,8 @@ export function TaskInputPage() {
         onClose={() => setDrawerOpen(false)}
         onSaved={() => void 0}
       />
+
+      <ModuleDetailDrawer open={moduleDrawerOpen} moduleKey={moduleDrawerKey} onClose={() => setModuleDrawerOpen(false)} />
     </PageScaffold>
   )
 }
