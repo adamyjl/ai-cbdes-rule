@@ -135,5 +135,28 @@
     ],
     "updated_at": "2026-01-31T09:00:37.707758+00:00",
     "created_at": "2026-01-31T09:00:37.711370+00:00"
+  },
+  {
+    "module_key": "v20260305-e3756b11:noise:makeNoise",
+    "version": "v20260305-e3756b11",
+    "namespace": "noise",
+    "root_function": "makeNoise",
+    "functions": [
+      "appendNoiseSignal",
+      "executeStopAction",
+      "makeNoise"
+    ],
+    "edges": [
+      {
+        "from": "makeNoise",
+        "to": "appendNoiseSignal"
+      },
+      {
+        "from": "makeNoise",
+        "to": "executeStopAction"
+      }
+    ],
+    "updated_at": "2026-03-05T09:25:53.546593+00:00",
+    "created_at": "2026-03-05T09:25:53.548067+00:00"
   }
 ]

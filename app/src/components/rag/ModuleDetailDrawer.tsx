@@ -51,17 +51,17 @@ export function ModuleDetailDrawer(props: Props) {
       }
     >
       {!mod ? (
-        <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>未选择模块</Typography.Text>
+        <Typography.Text style={{ color: 'var(--app-text-muted)' }}>未选择模块</Typography.Text>
       ) : (
         <div className="flex flex-col gap-3">
-          <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>module_key: {mod.module_key}</Typography.Text>
-          <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>root_dir: {mod.root_dir}</Typography.Text>
-          <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>entry_function_id: {mod.entry_function_id || '-'}</Typography.Text>
+          <Typography.Text style={{ color: 'var(--app-text-muted)' }}>module_key: {mod.module_key}</Typography.Text>
+          <Typography.Text style={{ color: 'var(--app-text-muted)' }}>root_dir: {mod.root_dir}</Typography.Text>
+          <Typography.Text style={{ color: 'var(--app-text-muted)' }}>entry_function_id: {mod.entry_function_id || '-'}</Typography.Text>
           {mod.doc_zh ? (
-            <Typography.Paragraph style={{ margin: 0, color: 'rgba(244,244,245,0.72)' }}>说明：{mod.doc_zh}</Typography.Paragraph>
+            <Typography.Paragraph style={{ margin: 0, color: 'var(--app-text-muted)' }}>说明：{mod.doc_zh}</Typography.Paragraph>
           ) : null}
           {mod.doc_en ? (
-            <Typography.Paragraph style={{ margin: 0, color: 'rgba(244,244,245,0.6)' }}>Summary: {mod.doc_en}</Typography.Paragraph>
+            <Typography.Paragraph style={{ margin: 0, color: 'var(--app-text-muted)' }}>Summary: {mod.doc_en}</Typography.Paragraph>
           ) : null}
 
           <Divider style={{ margin: '8px 0' }} />
@@ -101,4 +101,3 @@ export function ModuleDetailDrawer(props: Props) {
     </Drawer>
   )
 }
-

@@ -1,0 +1,132 @@
+.mllm-root[data-theme='cast-light'] {
+  --mllm-bg: #ffffff;
+  --mllm-primary: rgb(95, 2, 107);
+  --mllm-canvas: rgb(252, 248, 242);
+  --mllm-block: rgb(227, 212, 229);
+  --mllm-text: rgb(24, 24, 27);
+  --mllm-text-muted: rgb(82, 82, 91);
+  --mllm-border: rgb(229, 231, 235);
+  --mllm-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+}
+
+.mllm-root[data-theme='cast-light'] {
+  color: var(--mllm-text);
+  background: var(--mllm-bg);
+}
+
+.mllm-root[data-theme='cast-light'] *::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.mllm-root[data-theme='cast-light'] *::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.mllm-root[data-theme='cast-light'] *::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 6px;
+}
+
+.mllm-root[data-theme='cast-light'] *::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.mllm-root[data-theme='cast-light'] ::selection {
+  background: rgba(95, 2, 107, 0.18);
+}
+
+.mllm-root[data-theme='cast-light'] .bg-slate-950 {
+  background-color: var(--mllm-bg) !important;
+}
+
+.mllm-root[data-theme='cast-light'] .bg-slate-900 {
+  background-color: #ffffff !important;
+}
+
+.mllm-root[data-theme='cast-light'] .bg-slate-800 {
+  background-color: var(--mllm-canvas) !important;
+}
+
+.mllm-root[data-theme='cast-light'] .bg-slate-950\/50 {
+  background-color: rgba(252, 248, 242, 0.55) !important;
+}
+
+.mllm-root[data-theme='cast-light'] .bg-slate-900\/50 {
+  background-color: rgba(255, 255, 255, 0.78) !important;
+}
+
+.mllm-root[data-theme='cast-light'] .border-slate-800,
+.mllm-root[data-theme='cast-light'] .border-slate-700,
+.mllm-root[data-theme='cast-light'] .border-slate-600 {
+  border-color: var(--mllm-border) !important;
+}
+
+.mllm-root[data-theme='cast-light'] .text-white,
+.mllm-root[data-theme='cast-light'] .text-slate-200,
+.mllm-root[data-theme='cast-light'] .text-slate-300 {
+  color: var(--mllm-text) !important;
+}
+
+.mllm-root[data-theme='cast-light'] .text-slate-400,
+.mllm-root[data-theme='cast-light'] .text-slate-500,
+.mllm-root[data-theme='cast-light'] .text-slate-600 {
+  color: var(--mllm-text-muted) !important;
+}
+
+.mllm-root[data-theme='cast-light'] .shadow-xl,
+.mllm-root[data-theme='cast-light'] .shadow-2xl,
+.mllm-root[data-theme='cast-light'] .shadow-lg {
+  box-shadow: var(--mllm-shadow) !important;
+}
+
+.mllm-root[data-theme='cast-light'] .hover\:bg-slate-800:hover,
+.mllm-root[data-theme='cast-light'] .hover\:bg-slate-700:hover,
+.mllm-root[data-theme='cast-light'] .hover\:bg-slate-900:hover,
+.mllm-root[data-theme='cast-light'] .hover\:bg-slate-800\/50:hover,
+.mllm-root[data-theme='cast-light'] .hover\:bg-slate-900\/50:hover {
+  background-color: rgba(252, 248, 242, 1) !important;
+}
+
+.mllm-root[data-theme='cast-light'] .hover\:border-brand-500:hover,
+.mllm-root[data-theme='cast-light'] .focus\:border-brand-500:focus {
+  border-color: var(--mllm-primary) !important;
+}
+
+.mllm-root[data-theme='cast-light'] .bg-brand-600 {
+  background-color: var(--mllm-primary) !important;
+}
+
+.mllm-root[data-theme='cast-light'] .hover\:bg-brand-500:hover,
+.mllm-root[data-theme='cast-light'] .bg-brand-500 {
+  background-color: rgb(95, 2, 107) !important;
+}
+
+.mllm-root[data-theme='cast-light'] .bg-brand-500\/20 {
+  background-color: rgba(95, 2, 107, 0.10) !important;
+}
+
+.mllm-root[data-theme='cast-light'] .bg-brand-900\/20,
+.mllm-root[data-theme='cast-light'] .bg-brand-900\/10 {
+  background-color: rgba(95, 2, 107, 0.08) !important;
+}
+
+.mllm-root[data-theme='cast-light'] .border-brand-500,
+.mllm-root[data-theme='cast-light'] .border-brand-500\/50,
+.mllm-root[data-theme='cast-light'] .hover\:border-brand-400:hover {
+  border-color: rgba(95, 2, 107, 0.55) !important;
+}
+
+.mllm-root[data-theme='cast-light'] .text-brand-400 {
+  color: var(--mllm-primary) !important;
+}
+
+.mllm-root[data-theme='cast-light'] .mllm-topbar,
+.mllm-root[data-theme='cast-light'] .mllm-topbar * {
+  color: #ffffff !important;
+}
+
+.mllm-root[data-theme='cast-light'] .mllm-topbar .bg-white,
+.mllm-root[data-theme='cast-light'] .mllm-topbar .bg-white * {
+  color: var(--mllm-text) !important;
+}

@@ -1,8 +1,14 @@
 const react = require('@vitejs/plugin-react')
 const { defineConfig } = require('vite')
+const path = require('path')
 
 module.exports = defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      'antd/dist/reset.css': path.resolve(__dirname, 'node_modules/antd/dist/reset.css')
+    }
+  },
   build: {
     minify: false
   },

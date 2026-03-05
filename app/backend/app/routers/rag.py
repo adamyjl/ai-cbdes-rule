@@ -1,4 +1,8 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, File, Form, UploadFile
+from pathlib import Path
+from uuid import uuid4
+
+from backend.app.services.data_dir import get_data_dir
 from pydantic import BaseModel
 
 from backend.app.schemas import IndexRequest, RagQueryRequest, RagQueryResponse, ScanRequest
@@ -8,6 +12,66 @@ from backend.app.services.defaults import get_default_rag_root
 
 router = APIRouter(prefix="/rag", tags=["rag"])
 rag_service = RagService()
+
+
+def _sanitize_relpath(name: str) -> str:
+    raw = str(name or '').replace('\\', '/').strip()
+    raw = raw.lstrip('/')
+    if ':' in raw:
+        raw = raw.split(':', 1)[1].lstrip('/')
+    parts = []
+    for p in raw.split('/'):
+        p = p.strip()
+        if not p or p in {'.', '..'}:
+            continue
+        parts.append(p)
+    return '/'.join(parts)
+
+
+@router.post('/upload')
+async def upload_code(
+    files: list[UploadFile] = File(...),
+    upload_id: str | None = Form(None),
+):
+    uid = (upload_id or '').strip() or uuid4().hex
+    base = (get_data_dir() / 'uploads').resolve()
+    target_root = (base / uid).resolve()
+    target_root.mkdir(parents=True, exist_ok=True)
+
+    total_files = 0
+    total_bytes = 0
+    saved_files = 0
+    skipped_files = 0
+    for uf in files:
+        total_files += 1
+        rel = _sanitize_relpath(uf.filename or '')
+        if not rel:
+            skipped_files += 1
+            continue
+        dst = (target_root / rel).resolve()
+        if target_root not in dst.parents and dst != target_root:
+            skipped_files += 1
+            continue
+        dst.parent.mkdir(parents=True, exist_ok=True)
+
+        with dst.open('wb') as f:
+            while True:
+                chunk = await uf.read(1024 * 1024)
+                if not chunk:
+                    break
+                f.write(chunk)
+                total_bytes += len(chunk)
+        saved_files += 1
+
+    return {
+        'ok': True,
+        'upload_id': uid,
+        'root_dir': str(target_root),
+        'files_total': total_files,
+        'files_saved': saved_files,
+        'files_skipped': skipped_files,
+        'bytes': total_bytes,
+    }
 
 
 @router.post("/scan")

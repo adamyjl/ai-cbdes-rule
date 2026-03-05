@@ -8,11 +8,11 @@ export function PageScaffold(props: {
 }) {
   return (
     <div className="space-y-4">
-      <Card bordered={false} style={{ background: 'rgba(9, 9, 11, 0.6)' }}>
+      <Card bordered style={{ background: '#ffffff', borderColor: 'rgba(24, 24, 27, 0.12)' }}>
         <Typography.Title level={4} style={{ margin: 0 }}>
           {props.title}
         </Typography.Title>
-        <Typography.Paragraph style={{ marginTop: 8, marginBottom: 0, color: 'rgba(244,244,245,0.72)' }}>
+        <Typography.Paragraph style={{ marginTop: 8, marginBottom: 0, color: 'rgba(24, 24, 27, 0.72)' }}>
           {props.description}
         </Typography.Paragraph>
       </Card>

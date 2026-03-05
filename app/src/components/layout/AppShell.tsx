@@ -1,12 +1,14 @@
 import type { ReactNode } from 'react'
 import { ConfigProvider, Layout, theme } from 'antd'
 import { useEffect, useMemo } from 'react'
-import { SidebarNav } from './SidebarNav'
 import { TopBar } from './TopBar'
 import { useArchiveStore } from '../../store/archiveStore'
+import { useLocation } from 'react-router-dom'
 
 export function AppShell(props: { children: ReactNode }) {
   const bootstrapArchives = useArchiveStore((s) => s.bootstrap)
+  const location = useLocation()
+  const isMllm = location.pathname === '/mllm' || location.pathname.startsWith('/mllm/')
 
   useEffect(() => {
     bootstrapArchives()
@@ -14,12 +16,12 @@ export function AppShell(props: { children: ReactNode }) {
 
   const antdTheme = useMemo(
     () => ({
-      algorithm: theme.darkAlgorithm,
+      algorithm: theme.defaultAlgorithm,
       token: {
-        colorPrimary: '#22c55e',
-        colorBgBase: '#09090b',
-        colorTextBase: '#fafafa',
-        colorBorder: '#27272a'
+        colorPrimary: 'rgb(95, 2, 107)',
+        colorBgBase: '#ffffff',
+        colorTextBase: 'rgb(24, 24, 27)',
+        colorBorder: '#e5e7eb'
       }
     }),
     []
@@ -28,16 +30,15 @@ export function AppShell(props: { children: ReactNode }) {
   return (
     <ConfigProvider theme={antdTheme}>
       <Layout style={{ minHeight: '100dvh' }}>
-        <Layout.Sider width={288} breakpoint="md" collapsedWidth={0} theme="dark">
-          <div style={{ padding: 16 }}>
-            <SidebarNav />
-          </div>
-        </Layout.Sider>
         <Layout>
-          <Layout.Header style={{ padding: 0, height: 'auto', background: 'rgba(9, 9, 11, 0.85)' }}>
-            <TopBar />
-          </Layout.Header>
-          <Layout.Content style={{ padding: 24 }}>{props.children}</Layout.Content>
+          {!isMllm && (
+            <Layout.Header style={{ padding: 0, height: 'auto', background: 'rgb(95, 2, 107)' }}>
+              <TopBar />
+            </Layout.Header>
+          )}
+          <Layout.Content style={{ padding: isMllm ? 0 : 24, background: '#ffffff' }}>
+            {props.children}
+          </Layout.Content>
         </Layout>
       </Layout>
     </ConfigProvider>

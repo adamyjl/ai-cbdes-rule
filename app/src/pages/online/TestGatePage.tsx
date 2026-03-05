@@ -717,9 +717,9 @@ export function TestGatePage() {
           }
           size="small"
           bordered={false}
-          style={{ background: 'rgba(9, 9, 11, 0.6)' }}
+          style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}
         >
-          <Typography.Paragraph style={{ marginTop: 0, color: 'rgba(244,244,245,0.72)' }}>
+          <Typography.Paragraph style={{ marginTop: 0, color: 'var(--app-text-muted)' }}>
             单测与覆盖率脚本由大模型根据“需求提示词 + 生成结果”自动生成，然后在本地执行并实时输出日志。
           </Typography.Paragraph>
 
@@ -771,21 +771,36 @@ export function TestGatePage() {
 
       <div className="md:col-span-8">
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
-          <Card title="门禁流水线" size="small" bordered={false} style={{ background: 'rgba(9, 9, 11, 0.6)' }}>
+          <Card
+            title="门禁流水线"
+            size="small"
+            bordered={false}
+            style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}
+          >
             <Steps current={Math.max(0, Math.min(stepIndex(stage, statuses), Math.max(0, steps.length - 1)))} items={steps} />
-            <div className="mt-3 text-sm text-zinc-300">
+            <div className="mt-3 text-sm" style={{ color: 'var(--app-text-muted)' }}>
               当前状态：{stage} {jobId ? `（job: ${jobId.slice(0, 8)}…）` : ''}
             </div>
-            {jobError ? <div className="mt-1 text-sm text-rose-300">错误：{jobError}</div> : null}
+            {jobError ? (
+              <div className="mt-1 text-sm" style={{ color: '#b42318' }}>
+                错误：{jobError}
+              </div>
+            ) : null}
           </Card>
-          <Card title="日志" size="small" bordered={false} style={{ background: 'rgba(9, 9, 11, 0.6)' }}>
+          <Card title="日志" size="small" bordered={false} style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}>
             <Input.TextArea value={logLines.join('\n')} readOnly rows={22} />
           </Card>
-          <Card title="检测产物" size="small" bordered={false} style={{ background: 'rgba(9, 9, 11, 0.6)' }}>
+          <Card
+            title="检测产物"
+            size="small"
+            bordered={false}
+            style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}
+          >
             <Typography.Text>文件列表（按生成结果分割）</Typography.Text>
             <div className="mt-2">
               <Table
                 size="small"
+                className="light-table"
                 rowKey={(r) => r.path}
                 columns={fileColumns as any}
                 dataSource={splitFiles}
@@ -797,6 +812,7 @@ export function TestGatePage() {
             <div className="mt-2">
               <Table
                 size="small"
+                className="light-table"
                 rowKey={(r) => `${r.file_path}:${r.name}:${r.signature}`}
                 columns={fnColumns as any}
                 dataSource={splitFunctions}

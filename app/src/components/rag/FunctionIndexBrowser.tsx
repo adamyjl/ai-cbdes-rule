@@ -158,10 +158,15 @@ export function FunctionIndexBrowser(props: Props) {
   const embedded = modules?.embedded ?? 0
 
   return (
-    <Card title="已索引函数" size="small" bordered={false} style={{ background: 'rgba(9, 9, 11, 0.6)' }}>
+    <Card
+      title="已索引函数"
+      size="small"
+      bordered={false}
+      style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}
+    >
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-3">
-          <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>
+          <Typography.Text style={{ color: 'var(--app-text-muted)' }}>
             总数：{modules?.total ?? '-'}，已向量化：{embedded}
           </Typography.Text>
           <Button onClick={() => void load()} loading={busy}>
@@ -177,7 +182,7 @@ export function FunctionIndexBrowser(props: Props) {
                 setPage(1)
               }}
             />
-            <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>按 Root Dir 过滤</Typography.Text>
+            <Typography.Text style={{ color: 'var(--app-text-muted)' }}>按 Root Dir 过滤</Typography.Text>
           </Space>
           <Popconfirm
             title={`删除选中 ${selectedRowKeys.length} 个函数？`}
@@ -220,7 +225,7 @@ export function FunctionIndexBrowser(props: Props) {
         </Space>
         <Table
           size="small"
-          className="dark-table"
+          className="light-table"
           rowKey="function_id"
           columns={columns as any}
           dataSource={functions?.items ?? []}
@@ -249,7 +254,7 @@ export function FunctionIndexBrowser(props: Props) {
             onChange: (p) => setPage(p)
           }}
         />
-        <Typography.Text style={{ color: 'rgba(244,244,245,0.5)' }}>
+        <Typography.Text style={{ color: 'var(--app-text-muted)' }}>
           点击行可打开详情（查看源码、编辑保存、测试入口）。
         </Typography.Text>
       </div>

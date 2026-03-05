@@ -129,10 +129,15 @@ export function ModuleIndexBrowser(props: Props) {
   const total = data?.total ?? 0
 
   return (
-    <Card title="已索引模块" size="small" bordered={false} style={{ background: 'rgba(9, 9, 11, 0.6)' }}>
+    <Card
+      title="已索引模块"
+      size="small"
+      bordered={false}
+      style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}
+    >
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-3">
-          <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>总数：{total}</Typography.Text>
+          <Typography.Text style={{ color: 'var(--app-text-muted)' }}>总数：{total}</Typography.Text>
           <Button onClick={() => void load()} loading={busy}>
             刷新
           </Button>
@@ -154,7 +159,7 @@ export function ModuleIndexBrowser(props: Props) {
         </Space>
         <Table
           size="small"
-          className="dark-table"
+          className="light-table"
           rowKey="module_key"
           columns={columns as any}
           dataSource={data?.items ?? []}
@@ -178,4 +183,3 @@ export function ModuleIndexBrowser(props: Props) {
     </Card>
   )
 }
-

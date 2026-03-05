@@ -238,11 +238,16 @@ export function TaskInputPage() {
 
   return (
     <PageScaffold
-      title="任务输入"
+      title="结构化输入"
       description="将口头需求转为可执行工单：拖拽函数卡 + 自然语言 + 结构化约束，右侧实时生成验收/KPI/缺口清单。"
     >
       <div className="md:col-span-4">
-        <Card title="函数库 / 模块库" size="small" bordered={false} style={{ background: 'rgba(9, 9, 11, 0.6)' }}>
+        <Card
+          title="函数库 / 模块库"
+          size="small"
+          bordered={false}
+          style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}
+        >
           <Tabs
             activeKey={activeTab}
             onChange={(k) => setActiveTab(k as any)}
@@ -276,6 +281,7 @@ export function TaskInputPage() {
                     </Space>
                     <Table
                       size="small"
+                      className="light-table"
                       rowKey="function_id"
                       loading={fnLoading}
                       pagination={{
@@ -314,7 +320,7 @@ export function TaskInputPage() {
                         }
                       })}
                     />
-                    <Typography.Text style={{ color: 'rgba(244,244,245,0.55)' }}>
+                    <Typography.Text style={{ color: 'var(--app-text-muted)' }}>
                       点击行查看详情；点击“加入”将函数链接到任务。
                     </Typography.Text>
                   </Space>
@@ -325,7 +331,7 @@ export function TaskInputPage() {
                 label: '模块库',
                 children: (
                   <Space direction="vertical" style={{ width: '100%' }} size={10}>
-                    <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>来自图形化搭建（本地）</Typography.Text>
+                    <Typography.Text style={{ color: 'var(--app-text-muted)' }}>来自图形化搭建（本地）</Typography.Text>
                     <Select
                       allowClear
                       value={taskDraft.selectedWorkflowId ?? undefined}
@@ -333,8 +339,8 @@ export function TaskInputPage() {
                       onChange={(v) => setTaskDraft({ selectedWorkflowId: v ? String(v) : null })}
                       placeholder="选择已搭建模块（本地）"
                     />
-                    <Divider style={{ borderColor: 'rgba(63,63,70,0.6)', margin: '8px 0' }} />
-                    <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>来自档案库（Archive）</Typography.Text>
+                    <Divider style={{ borderColor: 'var(--panel-border)', margin: '8px 0' }} />
+                    <Typography.Text style={{ color: 'var(--app-text-muted)' }}>来自档案库（Archive）</Typography.Text>
                     <Select
                       allowClear
                       value={undefined}
@@ -347,15 +353,16 @@ export function TaskInputPage() {
                       }}
                       placeholder="从档案选择模块"
                     />
-                    <Typography.Text style={{ color: 'rgba(244,244,245,0.55)' }}>
+                    <Typography.Text style={{ color: 'var(--app-text-muted)' }}>
                       说明：当前仅保存/引用模块结构摘要，后续可扩展为可执行工作流。
                     </Typography.Text>
 
-                    <Divider style={{ borderColor: 'rgba(63,63,70,0.6)', margin: '8px 0' }} />
-                    <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>来自 RAG 模块库（已索引）</Typography.Text>
+                    <Divider style={{ borderColor: 'var(--panel-border)', margin: '8px 0' }} />
+                    <Typography.Text style={{ color: 'var(--app-text-muted)' }}>来自 RAG 模块库（已索引）</Typography.Text>
                     <Input value={indexedModulesQ} onChange={(e) => setIndexedModulesQ(e.target.value)} placeholder="搜索模块" allowClear />
                     <Table
                       size="small"
+                      className="light-table"
                       rowKey="module_key"
                       loading={indexedModulesBusy}
                       pagination={{ pageSize: 8 }}
@@ -410,7 +417,12 @@ export function TaskInputPage() {
         </Card>
       </div>
       <div className="md:col-span-5">
-        <Card title="结构化工单" size="small" bordered={false} style={{ background: 'rgba(9, 9, 11, 0.6)' }}>
+        <Card
+          title="结构化工单"
+          size="small"
+          bordered={false}
+          style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}
+        >
           <Form layout="vertical">
             <Form.Item label="目标模块">
               <Select
@@ -459,16 +471,16 @@ export function TaskInputPage() {
               />
             </Form.Item>
 
-            <Divider style={{ borderColor: 'rgba(63,63,70,0.6)' }} />
+            <Divider style={{ borderColor: 'var(--panel-border)' }} />
             <Form.Item label="已链接函数">
               <Space direction="vertical" style={{ width: '100%' }}>
                 {(taskDraft.selectedFunctionIds || []).length === 0 ? (
-                  <Typography.Text style={{ color: 'rgba(244,244,245,0.55)' }}>尚未选择函数</Typography.Text>
+                  <Typography.Text style={{ color: 'var(--app-text-muted)' }}>尚未选择函数</Typography.Text>
                 ) : (
                   (taskDraft.selectedFunctionIds || []).slice(0, 30).map((fid) => (
                     <div key={fid} className="flex items-start justify-between gap-3" style={{ width: '100%' }}>
                       <Typography.Text
-                        style={{ color: 'rgba(244,244,245,0.8)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', flex: 1 }}
+                        style={{ color: 'var(--app-text)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', flex: 1 }}
                         copyable={{ text: fid }}
                       >
                         {fid}
@@ -487,7 +499,7 @@ export function TaskInputPage() {
               </Space>
             </Form.Item>
             <Form.Item label="已选择模块（工作流）">
-              <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>
+              <Typography.Text style={{ color: 'var(--app-text-muted)' }}>
                 {taskDraft.selectedWorkflowId || '-'}
               </Typography.Text>
             </Form.Item>
@@ -495,12 +507,12 @@ export function TaskInputPage() {
             <Form.Item label="已加入模块（RAG 模块库）">
               <Space direction="vertical" style={{ width: '100%' }}>
                 {(taskDraft.selectedModuleKeys || []).length === 0 ? (
-                  <Typography.Text style={{ color: 'rgba(244,244,245,0.55)' }}>尚未加入模块</Typography.Text>
+                  <Typography.Text style={{ color: 'var(--app-text-muted)' }}>尚未加入模块</Typography.Text>
                 ) : (
                   (taskDraft.selectedModuleKeys || []).slice(0, 30).map((mk) => (
                     <div key={mk} className="flex items-start justify-between gap-3" style={{ width: '100%' }}>
                       <Typography.Text
-                        style={{ color: 'rgba(244,244,245,0.8)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', flex: 1 }}
+                        style={{ color: 'var(--app-text)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', flex: 1 }}
                         copyable={{ text: mk }}
                       >
                         {mk}
@@ -533,7 +545,12 @@ export function TaskInputPage() {
         </Card>
       </div>
       <div className="md:col-span-3">
-        <Card title="问题分析与RAG关联" size="small" bordered={false} style={{ background: 'rgba(9, 9, 11, 0.6)' }}>
+        <Card
+          title="问题分析与RAG关联"
+          size="small"
+          bordered={false}
+          style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}
+        >
           <Space direction="vertical" size={10} style={{ width: '100%' }}>
             <Button
               type="primary"
@@ -623,23 +640,34 @@ export function TaskInputPage() {
               </Button>
             </Popconfirm>
 
-            <Card size="small" title="分析结果" bordered={false} style={{ background: 'rgba(24,24,27,0.6)' }}>
+            <Card
+              size="small"
+              title="分析结果"
+              bordered={false}
+              style={{ background: '#ffffff', border: '1px solid var(--panel-border)' }}
+            >
               {analysisMarkdown ? (
-                <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: 'pre-wrap', color: 'rgba(244,244,245,0.78)' }}>
+                <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: 'pre-wrap', color: 'var(--app-text)' }}>
                   {analysisMarkdown}
                 </Typography.Paragraph>
               ) : (
-                <Typography.Text style={{ color: 'rgba(244,244,245,0.55)' }}>点击“问题分析”生成初步分析。</Typography.Text>
+                <Typography.Text style={{ color: 'var(--app-text-muted)' }}>点击“问题分析”生成初步分析。</Typography.Text>
               )}
             </Card>
 
-            <Card size="small" title="RAG 关联" bordered={false} style={{ background: 'rgba(24,24,27,0.6)' }}>
+            <Card
+              size="small"
+              title="RAG 关联"
+              bordered={false}
+              style={{ background: '#ffffff', border: '1px solid var(--panel-border)' }}
+            >
               {analysisRagQuery ? (
-                <Typography.Text style={{ color: 'rgba(244,244,245,0.6)' }}>query: {analysisRagQuery}</Typography.Text>
+                <Typography.Text style={{ color: 'var(--app-text-muted)' }}>query: {analysisRagQuery}</Typography.Text>
               ) : null}
-              <Divider style={{ borderColor: 'rgba(63,63,70,0.6)', margin: '8px 0' }} />
+              <Divider style={{ borderColor: 'var(--panel-border)', margin: '8px 0' }} />
               <Table
                 size="small"
+                className="light-table"
                 rowKey="function_id"
                 pagination={false}
                 columns={[

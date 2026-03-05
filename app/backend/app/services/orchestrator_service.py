@@ -351,7 +351,7 @@ class OrchestratorService:
         if legacy_line in prompt:
             prompt = prompt.replace(legacy_line, improved_line)
 
-        if CPP_REWRITE_SPEC in prompt:
+        if '【C++代码改写统一规范' in prompt:
             merged = prompt
         else:
             merged = (
@@ -394,7 +394,25 @@ class OrchestratorService:
                 extra_body={'enable_thinking': False},
             )
 
-        res = llm_call(_call)
+        try:
+            res = llm_call(_call)
+        except Exception as e:
+            msg = str(e) or type(e).__name__
+            code_md = (
+                '### main.cpp\n'
+                '```cpp\n'
+                '#include <iostream>\n\n'
+                'int main() {\n'
+                '  std::cout << "llm_call_failed" << std::endl;\n'
+                '  return 0;\n'
+                '}\n'
+                '```\n'
+            )
+            return {
+                'code': code_md,
+                'key_points': ['llm_call_failed', msg][:2],
+                'log': f'llm_call_failed: {msg}',
+            }
         text = (res.choices[0].message.content or '').strip()
         obj = _parse_json(text)
 

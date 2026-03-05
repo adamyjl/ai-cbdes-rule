@@ -480,9 +480,9 @@ export function ReleasePage() {
             }
             size="small"
             bordered={false}
-            style={{ background: 'rgba(9, 9, 11, 0.6)' }}
+            style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}
           >
-            <Typography.Paragraph style={{ marginTop: 0, color: 'rgba(244,244,245,0.72)' }}>
+            <Typography.Paragraph style={{ marginTop: 0, color: 'var(--app-text-muted)' }}>
               仅支持选择 4 步门禁均通过（compile/static/unit/coverage）的 gate.run 档案作为发布源。
             </Typography.Paragraph>
             <Select
@@ -494,7 +494,7 @@ export function ReleasePage() {
             />
           </Card>
 
-          <Card title="版本号" size="small" bordered={false} style={{ background: 'rgba(9, 9, 11, 0.6)' }}>
+          <Card title="版本号" size="small" bordered={false} style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}>
             <Space wrap>
               <Input value={version} onChange={(e) => setVersion(e.target.value)} placeholder="自动生成版本号" style={{ width: 260 }} />
               <Button
@@ -512,14 +512,14 @@ export function ReleasePage() {
             </Space>
           </Card>
 
-          <Card title="发布结果" size="small" bordered={false} style={{ background: 'rgba(9, 9, 11, 0.6)' }}>
+          <Card title="发布结果" size="small" bordered={false} style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}>
             <Typography.Text>生成结果（原始，多文件 Markdown）</Typography.Text>
             <div className="mt-2">
               <Input.TextArea value={generatedResult} readOnly rows={14} />
             </div>
           </Card>
 
-          <Card title="RAG 索引" size="small" bordered={false} style={{ background: 'rgba(9, 9, 11, 0.6)' }}>
+          <Card title="RAG 索引" size="small" bordered={false} style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}>
             <Space wrap>
               <Button type="primary" loading={ragBusy} onClick={runRagIndex}>
                 添加 RAG 索引
@@ -527,11 +527,18 @@ export function ReleasePage() {
               {ragRootDir ? <Tag color="blue">root_dir: {ragRootDir}</Tag> : <Tag>未入库</Tag>}
             </Space>
             <div className="mt-3">
-              <Table size="small" rowKey={(r) => r.function_id} columns={ragColumns as any} dataSource={ragItems} pagination={{ pageSize: 6 }} />
+              <Table
+                size="small"
+                className="light-table"
+                rowKey={(r) => r.function_id}
+                columns={ragColumns as any}
+                dataSource={ragItems}
+                pagination={{ pageSize: 6 }}
+              />
             </div>
           </Card>
 
-          <Card title="模块入库" size="small" bordered={false} style={{ background: 'rgba(9, 9, 11, 0.6)' }}>
+          <Card title="模块入库" size="small" bordered={false} style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}>
             <Space wrap>
               <Input value={namespace} onChange={(e) => setNamespace(e.target.value)} placeholder="命名空间" style={{ width: 240 }} />
               <Button type="primary" loading={moduleBusy} onClick={runModulesUpsert}>
@@ -541,6 +548,7 @@ export function ReleasePage() {
             <div className="mt-3">
               <Table
                 size="small"
+                className="light-table"
                 rowKey={(r) => r.module_key}
                 columns={moduleColumns as any}
                 dataSource={modules}
@@ -549,8 +557,8 @@ export function ReleasePage() {
             </div>
           </Card>
 
-          <Card title="发布并入档" size="small" bordered={false} style={{ background: 'rgba(9, 9, 11, 0.6)' }}>
-            <Typography.Paragraph style={{ marginTop: 0, color: 'rgba(244,244,245,0.72)' }}>
+          <Card title="发布并入档" size="small" bordered={false} style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}>
+            <Typography.Paragraph style={{ marginTop: 0, color: 'var(--app-text-muted)' }}>
               完成版本号命名、RAG 索引与模块入库后，点击发布将写入档案（release.publish），可从档案管理回放跳转加载。
             </Typography.Paragraph>
             <Space wrap>
@@ -563,7 +571,7 @@ export function ReleasePage() {
       </div>
 
       <div className="md:col-span-5">
-        <Card title="发布摘要" size="small" bordered={false} style={{ background: 'rgba(9, 9, 11, 0.6)' }}>
+        <Card title="发布摘要" size="small" bordered={false} style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}>
           <Space direction="vertical" size={8} style={{ width: '100%' }}>
             <div className="flex items-center justify-between">
               <Typography.Text>发布源</Typography.Text>

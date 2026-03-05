@@ -958,7 +958,8 @@ export function WorkflowCanvas(props: {
         position: 'relative',
         height: 'calc(100vh - 260px)',
         minHeight: 720,
-        border: '1px solid rgba(63,63,70,0.7)',
+        background: 'var(--canvas-bg)',
+        border: '1px solid rgba(95, 2, 107, 0.22)',
         borderRadius: 8,
         overflow: 'hidden'
       }}
@@ -968,7 +969,7 @@ export function WorkflowCanvas(props: {
           position: 'absolute',
           inset: 0,
           backgroundImage:
-            'radial-gradient(rgba(255,255,255,0.06) 1px, rgba(0,0,0,0) 1px)',
+            'radial-gradient(rgba(95,2,107,0.12) 1px, rgba(0,0,0,0) 1px)',
           backgroundSize: '16px 16px',
           pointerEvents: 'none'
         }}
@@ -995,7 +996,7 @@ export function WorkflowCanvas(props: {
             const b = nodeInputHandle(to)
             const d = edgeRoutes.byId.get(e.id)?.d || orthogonalRoundedEdgePath(a, b, { cornerRadius: 10, stub: 18 })
             const isSelected = e.id === selectedEdgeId
-            const stroke = isSelected ? 'rgba(34,197,94,0.95)' : 'rgba(99,102,241,0.85)'
+            const stroke = isSelected ? 'rgb(95, 2, 107)' : 'rgba(95, 2, 107, 0.55)'
             return (
               <g key={e.id} data-edge>
                 <path
@@ -1029,7 +1030,7 @@ export function WorkflowCanvas(props: {
             const pts = edgeRoutes.crossesByEdge.get(e.id) || []
             if (!pts.length) return []
             const isSelected = e.id === selectedEdgeId
-            const stroke = isSelected ? 'rgba(34,197,94,0.95)' : 'rgba(99,102,241,0.85)'
+            const stroke = isSelected ? 'rgb(95, 2, 107)' : 'rgba(95, 2, 107, 0.55)'
             const r = 7
             return pts.map((p, idx) => (
               <path
@@ -1048,7 +1049,7 @@ export function WorkflowCanvas(props: {
             <path
               d={previewPath}
               fill="none"
-              stroke="rgba(244,244,245,0.5)"
+              stroke="rgba(24, 24, 27, 0.35)"
               strokeWidth={2}
               strokeDasharray="6 6"
               strokeLinecap="round"
@@ -1068,8 +1069,8 @@ export function WorkflowCanvas(props: {
               width: b.w,
               height: b.h,
               borderRadius: 14,
-              border: '1px dashed rgba(59,130,246,0.55)',
-              background: 'rgba(59,130,246,0.04)',
+              border: '1px dashed rgba(95, 2, 107, 0.35)',
+              background: 'rgba(95, 2, 107, 0.04)',
               pointerEvents: 'none'
             }}
           />
@@ -1083,8 +1084,8 @@ export function WorkflowCanvas(props: {
               top: Math.min(dragging.startY, dragging.y),
               width: Math.max(1, Math.abs(dragging.x - dragging.startX)),
               height: Math.max(1, Math.abs(dragging.y - dragging.startY)),
-              border: '1px dashed rgba(244,244,245,0.65)',
-              background: 'rgba(244,244,245,0.08)',
+              border: '1px dashed rgba(95, 2, 107, 0.38)',
+              background: 'rgba(95, 2, 107, 0.06)',
               borderRadius: 10,
               pointerEvents: 'none'
             }}
@@ -1108,10 +1109,10 @@ export function WorkflowCanvas(props: {
           })()
           const kindColor =
             kind === 'node'
-              ? 'rgba(34,197,94,0.85)'
+              ? 'rgba(95, 2, 107, 0.85)'
               : kind === 'platform'
-                ? 'rgba(168,85,247,0.85)'
-                : 'rgba(99,102,241,0.85)'
+                ? 'rgba(95, 2, 107, 0.85)'
+                : 'rgba(95, 2, 107, 0.85)'
 
           const isGlueMini = hideGlue && kind === 'glue'
 
@@ -1121,11 +1122,11 @@ export function WorkflowCanvas(props: {
                 key={n.id}
                 title={
                   <div style={{ maxWidth: 360 }}>
-                    <Typography.Text style={{ color: 'rgba(244,244,245,0.9)' }}>{n.display_name}</Typography.Text>
+                    <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.92)' }}>{n.display_name}</Typography.Text>
                     <br />
-                    <Typography.Text style={{ color: 'rgba(244,244,245,0.6)' }}>{n.module}</Typography.Text>
+                    <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.68)' }}>{n.module}</Typography.Text>
                     <br />
-                    <Typography.Text style={{ color: 'rgba(244,244,245,0.6)' }}>{n.file_path}</Typography.Text>
+                    <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.68)' }}>{n.file_path}</Typography.Text>
                   </div>
                 }
               >
@@ -1150,8 +1151,8 @@ export function WorkflowCanvas(props: {
                     width: GLUE_R * 2,
                     height: GLUE_R * 2,
                     borderRadius: 999,
-                    background: 'rgba(244,244,245,0.3)',
-                    border: isSelected ? `2px solid ${kindColor}` : '2px solid rgba(63,63,70,0.8)',
+                    background: 'rgba(255, 255, 255, 0.85)',
+                    border: isSelected ? '2px solid rgb(95, 2, 107)' : '2px solid rgba(24, 24, 27, 0.25)',
                     cursor: 'grab'
                   }}
                 />
@@ -1182,9 +1183,8 @@ export function WorkflowCanvas(props: {
                 minHeight: NODE_H,
                 padding: 10,
                 borderRadius: 10,
-                border: isSelected ? `1px solid ${kindColor}` : '1px solid rgba(63,63,70,0.7)',
-                background: 'rgba(24,24,27,0.75)',
-                backdropFilter: 'blur(6px)',
+                border: isSelected ? '2px solid rgb(95, 2, 107)' : '1px dashed rgba(24, 24, 27, 0.35)',
+                background: 'var(--block-bg)',
                 userSelect: 'none'
               }}
             >
@@ -1200,11 +1200,11 @@ export function WorkflowCanvas(props: {
                   title={kind}
                 />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <Typography.Text style={{ color: 'rgba(244,244,245,0.92)' }} ellipsis>
+                  <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.92)' }} ellipsis>
                     {n.display_name}
                   </Typography.Text>
                   <br />
-                  <Typography.Text style={{ color: 'rgba(244,244,245,0.55)' }}>{n.module}</Typography.Text>
+                  <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.62)' }}>{n.module}</Typography.Text>
                 </div>
                 {kind === 'module' && onToggleModule ? (
                   <div
@@ -1222,9 +1222,9 @@ export function WorkflowCanvas(props: {
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      background: 'rgba(59,130,246,0.12)',
-                      border: '1px solid rgba(59,130,246,0.35)',
-                      color: 'rgba(191,219,254,0.95)',
+                      background: 'rgba(95, 2, 107, 0.08)',
+                      border: '1px solid rgba(95, 2, 107, 0.25)',
+                      color: 'rgba(95, 2, 107, 0.9)',
                       cursor: 'pointer',
                       flex: '0 0 auto'
                     }}
@@ -1273,8 +1273,8 @@ export function WorkflowCanvas(props: {
                   width: 18,
                   height: 18,
                   borderRadius: 999,
-                  background: 'rgba(99,102,241,0.95)',
-                  border: '2px solid rgba(9,9,11,0.9)',
+                  background: 'rgb(95, 2, 107)',
+                  border: '2px solid rgba(255, 255, 255, 0.92)',
                   cursor: 'crosshair'
                 }}
                 title="从输出端口拖拽连线"
@@ -1287,8 +1287,8 @@ export function WorkflowCanvas(props: {
                   width: 18,
                   height: 18,
                   borderRadius: 999,
-                  background: 'rgba(244,244,245,0.6)',
-                  border: '2px solid rgba(9,9,11,0.9)'
+                  background: 'rgba(255, 255, 255, 0.92)',
+                  border: '2px solid rgba(95, 2, 107, 0.5)'
                 }}
                 title="输入端口"
               />

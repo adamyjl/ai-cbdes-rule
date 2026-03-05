@@ -37,6 +37,7 @@
 **部署态（Caddy）**见 [app/.runtime/Caddyfile](../.runtime/Caddyfile)：
 
 - `/`：静态站点（`app/dist`）
+- `/mllm`：MLLM 工作台（主前端路由），说明见 [MLLM_WEB.md](./MLLM_WEB.md)
 - `/py/*`：反代 FastAPI
 - `/api/*`：反代 Express
 

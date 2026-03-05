@@ -1,0 +1,60 @@
+{
+  "written_files": [
+    {
+      "path": "reuse/main.cpp",
+      "bytes": 4648
+    },
+    {
+      "path": "reuse/main.cpp",
+      "bytes": 684
+    },
+    {
+      "path": "reuse/mapAnalysis.cpp",
+      "bytes": 3365
+    },
+    {
+      "path": "reuse/mapToAstar.cpp",
+      "bytes": 718
+    },
+    {
+      "path": "reuse/getPath.cpp",
+      "bytes": 918
+    },
+    {
+      "path": "reuse/findLane.cpp",
+      "bytes": 1223
+    },
+    {
+      "path": "reuse/moduleSelfCheckPrint.cpp",
+      "bytes": 1863
+    },
+    {
+      "path": "reuse/initSpeedForTrajectory.cpp",
+      "bytes": 1566
+    },
+    {
+      "path": "reuse/size.cpp",
+      "bytes": 78
+    },
+    {
+      "path": "reuse/getMinDistanceOfPoint.cpp",
+      "bytes": 2337
+    },
+    {
+      "path": "reuse/speedModel.cpp",
+      "bytes": 586
+    },
+    {
+      "path": "reuse/getDistance.cpp",
+      "bytes": 266
+    },
+    {
+      "path": "glue/convertPathToSpeedInit.cpp",
+      "bytes": 287
+    },
+    {
+      "path": "main.cpp",
+      "bytes": 24
+    }
+  ]
+}

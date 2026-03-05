@@ -111,23 +111,23 @@ export function ReviewItemsModal(props: {
       destroyOnClose
     >
       {items.length === 0 ? (
-        <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>暂无需要确认的条目。</Typography.Text>
+        <Typography.Text style={{ color: 'var(--app-text-muted)' }}>暂无需要确认的条目。</Typography.Text>
       ) : (
         <Space direction="vertical" size={10} style={{ width: '100%' }}>
-          <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>
+          <Typography.Text style={{ color: 'var(--app-text-muted)' }}>
             进度：{idx + 1} / {items.length}
           </Typography.Text>
 
-          <div className="rounded-md border border-zinc-800 bg-zinc-950/60 p-3">
-            <Typography.Text style={{ color: 'rgba(244,244,245,0.9)' }}>{current}</Typography.Text>
+          <div className="rounded-md p-3" style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}>
+            <Typography.Text style={{ color: 'var(--app-text)' }}>{current}</Typography.Text>
           </div>
 
-          <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>澄清问题：</Typography.Text>
-          <div className="rounded-md border border-zinc-800 bg-zinc-950/60 p-3">
-            <Typography.Text style={{ color: 'rgba(244,244,245,0.8)' }}>{question || '...'}</Typography.Text>
+          <Typography.Text style={{ color: 'var(--app-text-muted)' }}>澄清问题：</Typography.Text>
+          <div className="rounded-md p-3" style={{ background: '#ffffff', border: '1px solid var(--panel-border)' }}>
+            <Typography.Text style={{ color: 'var(--app-text)' }}>{question || '...'}</Typography.Text>
           </div>
 
-          <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>你的回答：</Typography.Text>
+          <Typography.Text style={{ color: 'var(--app-text-muted)' }}>你的回答：</Typography.Text>
           <Input.TextArea value={answer} onChange={(e) => setAnswer(e.target.value)} rows={5} placeholder="请给出具体值/范围/示例" />
 
           <Space wrap style={{ justifyContent: 'space-between', width: '100%' }}>

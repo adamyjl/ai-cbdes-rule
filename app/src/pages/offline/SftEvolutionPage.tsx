@@ -1,5 +1,5 @@
 import { PageScaffold } from '../PageScaffold'
-import { Button, Card, Divider, Form, Input, Select, Space, Steps, Tabs, Tag, Typography, message } from 'antd'
+import { Button, Card, Collapse, Divider, Form, Input, Select, Space, Steps, Tabs, Tag, Typography, message } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 
 type ApiProviderId = 'glm' | 'openai' | 'claude' | 'grok' | 'qwen' | 'internvl'
@@ -153,19 +153,29 @@ export function SftEvolutionPage() {
       description="后训练工作流（数据集构建 → SFT → RL → 评测 → 上线回归），当前仅实现前端交互样例。"
     >
       <div className="md:col-span-12">
-        <Card title="工作流" size="small" bordered={false} style={{ background: 'rgba(9, 9, 11, 0.6)' }}>
+        <Card
+          title="工作流"
+          size="small"
+          bordered={false}
+          style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}
+        >
           <Steps
             current={1}
             items={[{ title: '数据集构建' }, { title: 'SFT' }, { title: 'RL' }, { title: '评测' }, { title: '回归上线' }]}
           />
-          <Typography.Paragraph style={{ marginTop: 12, color: 'rgba(244,244,245,0.72)' }}>
+          <Typography.Paragraph style={{ marginTop: 12, color: 'var(--app-text-muted)' }}>
             本页用于配置“训练/评测所用的大模型来源”。后端未接入时，配置仅保存在浏览器本地。
           </Typography.Paragraph>
         </Card>
       </div>
 
       <div className="md:col-span-6">
-        <Card title="模型来源" size="small" bordered={false} style={{ background: 'rgba(9, 9, 11, 0.6)' }}>
+        <Card
+          title="模型来源"
+          size="small"
+          bordered={false}
+          style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}
+        >
           <Tabs
             activeKey={activeTab}
             onChange={(k) => setActiveTab(k as any)}
@@ -196,8 +206,8 @@ export function SftEvolutionPage() {
                         保存
                       </Button>
                     </Space>
-                    <Divider style={{ borderColor: 'rgba(63,63,70,0.6)' }} />
-                    <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>
+                    <Divider style={{ borderColor: 'var(--panel-border)' }} />
+                    <Typography.Text style={{ color: 'var(--app-text-muted)' }}>
                       提示：当前仅 UI 交互样例，不会向后端发送 key，也不会实际发起模型调用。
                     </Typography.Text>
                   </Form>
@@ -239,10 +249,10 @@ export function SftEvolutionPage() {
                         保存
                       </Button>
                     </Space>
-                    <Divider style={{ borderColor: 'rgba(63,63,70,0.6)' }} />
+                    <Divider style={{ borderColor: 'var(--panel-border)' }} />
                     <Space wrap>
                       <Tag color="blue">样例</Tag>
-                      <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>
+                      <Typography.Text style={{ color: 'var(--app-text-muted)' }}>
                         后续可接入：本地/集群训练（SFT、DPO、VLM），复用本代码库的函数索引与评测链路。
                       </Typography.Text>
                     </Space>
@@ -255,12 +265,113 @@ export function SftEvolutionPage() {
       </div>
 
       <div className="md:col-span-6">
-        <Card title="快速定位" size="small" bordered={false} style={{ background: 'rgba(9, 9, 11, 0.6)' }}>
-          <Typography.Paragraph style={{ marginTop: 0, color: 'rgba(244,244,245,0.72)' }}>
-            你可以先在此页面完成模型来源选择，然后在 RAG 管理页挑选函数做数据构建/评测基线。后续该区域会承载：训练作业列表、
-            评测对比与回归策略。
+        <Card
+          title="快速定位"
+          size="small"
+          bordered={false}
+          style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}
+        >
+          <Typography.Paragraph style={{ marginTop: 0, color: 'var(--app-text-muted)' }}>
+            这里集中展示当前系统中所有基于 GLM-4.7（或同类 Chat API）调用的提示词入口与示例，方便统一审计与迭代。
           </Typography.Paragraph>
-          <div className="h-64 rounded-md border border-zinc-800 bg-zinc-950/60" />
+
+          <Collapse
+            items={[
+              {
+                key: 'rag-function-enrich',
+                label: 'RAG：函数向量化/增强（doc_zh/doc_en/inputs/outputs）',
+                children: (
+                  <Typography.Paragraph
+                    style={{ marginBottom: 0, whiteSpace: 'pre-wrap', color: 'var(--app-text)' }}
+                    copyable
+                  >
+                    {`示例（结构化 JSON Prompt）\n\n{"task":"你是智能驾驶基础软件的代码分析助手，请为函数生成可检索的结构化档案。","constraints":{"modules":["planning","control","decision"],"kinds":["node","glue","platform"],"output_json_only":true},"input":{"file_path":"Planning/OnVehicle/foo.cpp","signature":"double CalcFoo(const Bar& in)","line_count":42,"code":"..."},"output_schema":{"display_name":"string","module":"one_of_modules","kind":"one_of_kinds","doc_zh":"string","doc_en":"string","inputs_json":"json_object","outputs_json":"json_object"}}\n\n入口：backend/app/services/rag_enricher.py::enrich_function`}
+                  </Typography.Paragraph>
+                )
+              },
+              {
+                key: 'rag-kind-classify',
+                label: 'RAG：函数三类分类（node/glue/platform）',
+                children: (
+                  <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: 'pre-wrap', color: 'var(--app-text)' }} copyable>
+                    {`示例（结构化 JSON Prompt）\n\n{"task":"你是智能驾驶基础软件的代码分析助手，请给出该函数的类别 kind。","kinds":["node","glue","platform"],"input":{"file_path":"Control/PidController/pid.cpp","signature":"void Update(...)"}}\n\n入口：backend/app/services/rag_enricher.py::classify_function_kind`}
+                  </Typography.Paragraph>
+                )
+              },
+              {
+                key: 'module-index',
+                label: 'RAG：模块索引（模块候选发现/描述/入库）',
+                children: (
+                  <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: 'pre-wrap', color: 'var(--app-text)' }} copyable>
+                    {`说明：模块索引会基于函数索引与调用关系发现候选模块，再对模块生成描述与结构化输入输出。\n\n入口：backend/app/services/module_index_jobs.py + backend/app/services/module_enricher.py`}
+                  </Typography.Paragraph>
+                )
+              },
+              {
+                key: 'task-analyze',
+                label: '结构化输入：问题分析（analysis_markdown + suggested_rag_query）',
+                children: (
+                  <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: 'pre-wrap', color: 'var(--app-text)' }} copyable>
+                    {`示例（结构化 JSON Prompt）\n\n{"task":"你是智能驾驶代码生产线的任务分析助手。请对输入工单进行问题分析，并输出结构化结果。","constraints":{"language":"zh","output":"markdown","no_secrets":true},"input":{"feature_description":"...","input_spec":"...","output_spec":"..."},"output_schema":{"analysis_markdown":"markdown string","suggested_rag_query":"string"}}\n\n入口：backend/app/services/task_analysis_service.py`}
+                  </Typography.Paragraph>
+                )
+              },
+              {
+                key: 'visual-glue',
+                label: '图形化输入：胶水代码生成（字段映射/类型转换）',
+                children: (
+                  <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: 'pre-wrap', color: 'var(--app-text)' }} copyable>
+                    {`示例（结构化 JSON Prompt）\n\n{"task":"你是智能驾驶基础软件的胶水代码生成器。请根据上下游节点的输入输出规范，生成一个中间转换节点的胶水代码。","constraints":{"output_json_only":true,"language":"zh"},"input":{"task_context":"...","from_node":{},"to_node":{}},"output_schema":{"glue_name":"string","doc_zh":"string","inputs_json":"json_object","outputs_json":"json_object","glue_code":"string"}}\n\n入口：backend/app/services/glue_codegen_service.py`}
+                  </Typography.Paragraph>
+                )
+              },
+              {
+                key: 'visual-export',
+                label: '图形化输入：导出（模型调用/受控组合/直接复用）提示词',
+                children: (
+                  <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: 'pre-wrap', color: 'var(--app-text)' }} copyable>
+                    {`说明：导出提示词由前端根据画布节点/连线与导出模式拼装，给到下游生成/集成流程。\n\n入口：src/pages/online/VisualBuilderPage.tsx（导出面板）`}
+                  </Typography.Paragraph>
+                )
+              },
+              {
+                key: 'cot-question',
+                label: '路由消歧：风险点/缺失项澄清问题生成',
+                children: (
+                  <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: 'pre-wrap', color: 'var(--app-text)' }} copyable>
+                    {`示例（结构化 JSON Prompt）\n\n{"task":"你是智能驾驶代码生产线的路由消歧助手。请针对单条风险/歧义或缺失信息，生成一句最关键、最具体的澄清问题。","mode":"risk|missing","item":"...","context":{"goal":"...","constraints":"..."},"output_schema":{"question":"string"}}\n\n入口：backend/app/services/cot_service.py::make_question`}
+                  </Typography.Paragraph>
+                )
+              },
+              {
+                key: 'cot-refine',
+                label: '路由消歧：基于回答更新目标/约束/子任务/列表',
+                children: (
+                  <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: 'pre-wrap', color: 'var(--app-text)' }} copyable>
+                    {`示例（结构化 JSON Prompt）\n\n{"task":"你是智能驾驶代码生产线的路由消歧助手。根据用户对单条问题的回答，更新任务目标/关键约束/子任务，并更新风险与缺失列表。","current_item":"...","user_answer":"...","state":{"goal":"...","constraints":"..."},"output_schema":{"resolved":"boolean","goal":"string","constraints":"string","subtasks":"string","risk_items":"string[]","missing_items":"string[]"}}\n\n入口：backend/app/services/cot_service.py::refine_with_answer`}
+                  </Typography.Paragraph>
+                )
+              },
+              {
+                key: 'cot-confirmed',
+                label: '路由消歧：生成确认后描述（最终可用提示词）',
+                children: (
+                  <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: 'pre-wrap', color: 'var(--app-text)' }} copyable>
+                    {`示例（结构化 JSON Prompt）\n\n{"task":"你是智能驾驶代码生产线的提示词工程师。基于消歧后的信息，输出最准确、可直接用于代码生成的中文提示词。","input":{"goal":"...","constraints":"...","subtasks":"...","related_functions":["..."]},"output_schema":{"prompt":"string"}}\n\n入口：backend/app/services/cot_service.py::generate_confirmed_prompt`}
+                  </Typography.Paragraph>
+                )
+              },
+              {
+                key: 'orchestration-generate',
+                label: '函数编排：生成目标 C/C++ 代码（多文件 Markdown）',
+                children: (
+                  <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: 'pre-wrap', color: 'var(--app-text)' }} copyable>
+                    {`示例（结构化 JSON Prompt）\n\n{"task":"你是智能驾驶代码生产线的 C/C++ 代码生成器。请基于输入提示词，直接生成目标 C/C++ 源码（可多文件），保证可落地编译。","input":{"prompt":"..."},"output_schema":{"code":"string","key_points":"string[]","log":"string"}}\n\n入口：backend/app/services/orchestrator_service.py::generate_cpp_code`}
+                  </Typography.Paragraph>
+                )
+              }
+            ]}
+          />
         </Card>
       </div>
     </PageScaffold>

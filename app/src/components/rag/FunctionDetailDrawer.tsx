@@ -145,11 +145,11 @@ export function FunctionDetailDrawer(props: Props) {
         }
       >
         {!fn ? (
-          <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>未选择函数</Typography.Text>
+          <Typography.Text style={{ color: 'var(--app-text-muted)' }}>未选择函数</Typography.Text>
         ) : (
           <div className="flex flex-col gap-3">
             <div>
-              <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>
+              <Typography.Text style={{ color: 'var(--app-text-muted)' }}>
                 file: {fn.file_path}:{fn.start_line}-{fn.end_line}
               </Typography.Text>
               {fn.signature ? (
@@ -158,12 +158,12 @@ export function FunctionDetailDrawer(props: Props) {
                 </Typography.Paragraph>
               ) : null}
               {fn.doc_zh ? (
-                <Typography.Paragraph style={{ marginTop: 8, marginBottom: 0, color: 'rgba(244,244,245,0.72)' }}>
+                <Typography.Paragraph style={{ marginTop: 8, marginBottom: 0, color: 'var(--app-text-muted)' }}>
                   说明：{fn.doc_zh}
                 </Typography.Paragraph>
               ) : null}
               {fn.doc_en ? (
-                <Typography.Paragraph style={{ marginTop: 8, marginBottom: 0, color: 'rgba(244,244,245,0.6)' }}>
+                <Typography.Paragraph style={{ marginTop: 8, marginBottom: 0, color: 'var(--app-text-muted)' }}>
                   Summary: {fn.doc_en}
                 </Typography.Paragraph>
               ) : null}
@@ -233,7 +233,7 @@ export function FunctionDetailDrawer(props: Props) {
           </>
         ) : null}
 
-        <Typography.Text style={{ color: 'rgba(244,244,245,0.5)' }}>
+        <Typography.Text style={{ color: 'var(--app-text-muted)' }}>
           为安全起见，仅允许以 python/py/pytest/npm/pnpm/ctest/cmake 等命令开头。
         </Typography.Text>
       </Modal>

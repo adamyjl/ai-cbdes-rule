@@ -56,7 +56,20 @@ function Resolve-NodeExe() {
 
 function Resolve-NpmCmd() {
   $cmd = Get-Command npm -ErrorAction SilentlyContinue
-  if ($cmd -and $cmd.Source) { return $cmd.Source }
+  if ($cmd -and $cmd.Source) {
+    $src = $cmd.Source
+    if ($src -and $src.ToLower().EndsWith('npm.ps1')) {
+      $dir = Split-Path -Parent $src
+      $candidate = Join-Path $dir 'npm.cmd'
+      if (Test-Path $candidate) { return $candidate }
+    }
+    if ($src -and $src.ToLower().EndsWith('npm.cmd')) {
+      return $src
+    }
+    if ($src -and $src.ToLower().EndsWith('npm.exe')) {
+      return $src
+    }
+  }
   $p = Resolve-ExePath @(
     'C:\Program Files\nodejs\npm.cmd',
     'C:\Program Files (x86)\nodejs\npm.cmd'
@@ -171,20 +184,20 @@ function Ensure-FrontendBuild($dir) {
 }
 
 function Write-Caddyfile($path, $siteRoot, $fastApiPort, $expressPort, $httpPort, $publicHost) {
-  $host = ($publicHost -replace '^https?://', '').TrimEnd('/')
-  if (!$host) {
+  $publicHostName = ($publicHost -replace '^https?://', '').TrimEnd('/')
+  if (!$publicHostName) {
     throw 'PublicHost is empty'
   }
   $alt = ''
-  if ($host.ToLower().StartsWith('www.')) {
-    $alt = $host.Substring(4)
+  if ($publicHostName.ToLower().StartsWith('www.')) {
+    $alt = $publicHostName.Substring(4)
   }
 
-  $hostsHttps = @("https://$host")
+  $hostsHttps = @("https://$publicHostName")
   if ($alt) { $hostsHttps += @("https://$alt") }
   $hostsHttpsText = ($hostsHttps -join ', ')
 
-  $hostsHttp = @("http://$host")
+  $hostsHttp = @("http://$publicHostName")
   if ($alt) { $hostsHttp += @("http://$alt") }
   $hostsHttpText = ($hostsHttp -join ', ')
 
@@ -209,7 +222,7 @@ function Write-Caddyfile($path, $siteRoot, $fastApiPort, $expressPort, $httpPort
 }
 
 $hostsHttpText {
-  redir https://$host{uri} permanent
+  redir https://$publicHostName{uri} permanent
 }
 
 $hostsHttpsText {
@@ -221,7 +234,7 @@ http://localhost, http://127.0.0.1 {
 }
 
 http://:$httpPort {
-  redir https://$host{uri} permanent
+  redir https://$publicHostName{uri} permanent
 }
 "@
   $caddyfile | Out-File -FilePath $path -Encoding utf8
@@ -266,6 +279,15 @@ cd /d "$appDir"
 function Ensure-Nssm($binDir) {
   $nssm = Get-Command nssm -ErrorAction SilentlyContinue
   if ($nssm) { return $nssm.Source }
+
+  $localNssmDir = Join-Path $binDir 'nssm'
+  if (Test-Path $localNssmDir) {
+    $exeLocal = Get-ChildItem -Recurse -File -Filter nssm.exe -Path $localNssmDir | Where-Object { $_.FullName -match 'win64' } | Select-Object -First 1
+    if ($exeLocal) {
+      Write-Info "use bundled nssm: $($exeLocal.FullName)"
+      return $exeLocal.FullName
+    }
+  }
 
   $nssmDir = Join-Path $binDir 'nssm'
   Ensure-Dir $nssmDir

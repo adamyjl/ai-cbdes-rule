@@ -45,3 +45,12 @@ class ArchiveService:
 
     def list_events(self, limit: int = 50) -> list[dict]:
         return list(reversed(self._events))[:limit]
+
+    def get_event(self, event_id: str) -> dict | None:
+        eid = str(event_id or '').strip()
+        if not eid:
+            return None
+        for ev in reversed(self._events):
+            if str(ev.get('id') or '') == eid:
+                return dict(ev)
+        return None

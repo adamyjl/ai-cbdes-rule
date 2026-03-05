@@ -111,7 +111,14 @@ export function AddRelatedModal(props: {
                     搜索
                   </Button>
                 </Space.Compact>
-                <Table size="small" rowKey="function_id" pagination={false} columns={functionColumns} dataSource={items} />
+                <Table
+                  size="small"
+                  className="light-table"
+                  rowKey="function_id"
+                  pagination={false}
+                  columns={functionColumns}
+                  dataSource={items}
+                />
               </Space>
             )
           },
@@ -155,4 +162,3 @@ export function AddRelatedModal(props: {
     </Modal>
   )
 }
-

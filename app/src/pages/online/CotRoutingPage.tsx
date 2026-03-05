@@ -101,7 +101,7 @@ export function CotRoutingPage() {
   function loadFromTaskInput() {
     const saved = loadJson(TASK_INPUT_STORAGE_KEY)
     if (!saved) {
-      message.error('未找到任务输入页面保存的问题')
+      message.error('未找到结构化输入页面保存的问题')
       return
     }
     const taskDraft = saved.taskDraft && typeof saved.taskDraft === 'object' ? saved.taskDraft : {}
@@ -169,7 +169,7 @@ export function CotRoutingPage() {
     }
     setRelatedRows(rows)
 
-    message.success('已加载任务输入页面的问题')
+    message.success('已加载结构化输入页面的问题')
   }
 
   function generateConfirmedDescription() {
@@ -298,20 +298,30 @@ export function CotRoutingPage() {
           }
           size="small"
           bordered={false}
-          style={{ background: 'rgba(9, 9, 11, 0.6)' }}
+          style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}
         >
-          <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>来源：任务输入页本地保存 + 分析结果（可编辑确认）。</Typography.Text>
+          <Typography.Text style={{ color: 'var(--app-text-muted)' }}>来源：结构化输入页本地保存 + 分析结果（可编辑确认）。</Typography.Text>
         </Card>
       </div>
 
       <div className="md:col-span-6">
-        <Card title="任务目标（问题描述）" size="small" bordered={false} style={{ background: 'rgba(9, 9, 11, 0.6)' }}>
+        <Card
+          title="任务目标（问题描述）"
+          size="small"
+          bordered={false}
+          style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}
+        >
           <Input.TextArea value={goal} onChange={(e) => setGoal(e.target.value)} rows={7} placeholder="从任务分析结果填入；你可以补充/修订" />
         </Card>
       </div>
 
       <div className="md:col-span-6">
-        <Card title="关键约束（输入/输出）" size="small" bordered={false} style={{ background: 'rgba(9, 9, 11, 0.6)' }}>
+        <Card
+          title="关键约束（输入/输出）"
+          size="small"
+          bordered={false}
+          style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}
+        >
           <Input.TextArea value={constraints} onChange={(e) => setConstraints(e.target.value)} rows={10} placeholder="从任务分析结果 + 任务输入的输入/输出格式填入；你可以补充/修订" />
         </Card>
       </div>
@@ -328,16 +338,20 @@ export function CotRoutingPage() {
           }
           size="small"
           bordered={false}
-          style={{ background: 'rgba(9, 9, 11, 0.6)' }}
+          style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}
         >
           {riskItems.length ? (
             <List
               size="small"
               dataSource={riskItems}
-              renderItem={(it) => <List.Item><Typography.Text style={{ color: 'rgba(244,244,245,0.78)' }}>{it}</Typography.Text></List.Item>}
+              renderItem={(it) => (
+                <List.Item>
+                  <Typography.Text style={{ color: 'var(--app-text)' }}>{it}</Typography.Text>
+                </List.Item>
+              )}
             />
           ) : (
-            <Typography.Text style={{ color: 'rgba(244,244,245,0.55)' }}>暂无风险/歧义点</Typography.Text>
+            <Typography.Text style={{ color: 'var(--app-text-muted)' }}>暂无风险/歧义点</Typography.Text>
           )}
         </Card>
       </div>
@@ -354,16 +368,20 @@ export function CotRoutingPage() {
           }
           size="small"
           bordered={false}
-          style={{ background: 'rgba(9, 9, 11, 0.6)' }}
+          style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}
         >
           {missingItems.length ? (
             <List
               size="small"
               dataSource={missingItems}
-              renderItem={(it) => <List.Item><Typography.Text style={{ color: 'rgba(244,244,245,0.78)' }}>{it}</Typography.Text></List.Item>}
+              renderItem={(it) => (
+                <List.Item>
+                  <Typography.Text style={{ color: 'var(--app-text)' }}>{it}</Typography.Text>
+                </List.Item>
+              )}
             />
           ) : (
-            <Typography.Text style={{ color: 'rgba(244,244,245,0.55)' }}>暂无缺失项</Typography.Text>
+            <Typography.Text style={{ color: 'var(--app-text-muted)' }}>暂无缺失项</Typography.Text>
           )}
         </Card>
       </div>
@@ -382,13 +400,13 @@ export function CotRoutingPage() {
           }
           size="small"
           bordered={false}
-          style={{ background: 'rgba(9, 9, 11, 0.6)' }}
+          style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}
         >
           <Table
             size="small"
             rowKey="rowId"
             pagination={false}
-            className="dark-table"
+            className="light-table"
             columns={[
               {
                 title: '类型',
@@ -406,13 +424,13 @@ export function CotRoutingPage() {
                 title: '名称',
                 key: 'name',
                 render: (_: any, r: RelatedRow) => {
-                  if (r.kind === 'module') return <Typography.Text style={{ color: 'rgba(244,244,245,0.78)' }}>{r.name}</Typography.Text>
+                  if (r.kind === 'module') return <Typography.Text style={{ color: 'var(--app-text)' }}>{r.name}</Typography.Text>
                   return (
                     <div className="flex flex-col" style={{ minWidth: 0 }}>
-                      <Typography.Text style={{ color: 'rgba(244,244,245,0.85)' }} ellipsis>
+                      <Typography.Text style={{ color: 'var(--app-text)' }} ellipsis>
                         {r.name}
                       </Typography.Text>
-                      <Typography.Text style={{ color: 'rgba(244,244,245,0.55)' }} ellipsis>
+                      <Typography.Text style={{ color: 'var(--app-text-muted)' }} ellipsis>
                         {r.function_id}
                       </Typography.Text>
                     </div>
@@ -448,17 +466,27 @@ export function CotRoutingPage() {
       </div>
 
       <div className="md:col-span-12">
-        <Card title="建议拆分的子任务" size="small" bordered={false} style={{ background: 'rgba(9, 9, 11, 0.6)' }}>
+        <Card
+          title="建议拆分的子任务"
+          size="small"
+          bordered={false}
+          style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}
+        >
           <Input.TextArea value={subtasks} onChange={(e) => setSubtasks(e.target.value)} rows={10} placeholder="从任务分析结果填入；你可以补充/修订" />
         </Card>
       </div>
 
       <div className="md:col-span-12">
-        <Card title="问题确认" size="small" bordered={false} style={{ background: 'rgba(9, 9, 11, 0.6)' }}>
+        <Card
+          title="问题确认"
+          size="small"
+          bordered={false}
+          style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}
+        >
           <Space direction="vertical" size={10} style={{ width: '100%' }}>
-            <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>消歧后的整体描述确认框：</Typography.Text>
+            <Typography.Text style={{ color: 'var(--app-text-muted)' }}>消歧后的整体描述确认框：</Typography.Text>
             <Input.TextArea value={confirmed} onChange={(e) => setConfirmed(e.target.value)} rows={10} placeholder="点击上方“生成确认后描述”，或在此手动编辑最终描述" />
-            <Divider style={{ borderColor: 'rgba(63,63,70,0.6)', margin: '8px 0' }} />
+            <Divider style={{ borderColor: 'var(--panel-border)', margin: '8px 0' }} />
             <Space wrap>
               <Button type="primary" onClick={confirmAndArchive} disabled={!confirmed.trim()}>
                 确认问题描述

@@ -1,0 +1,16 @@
+{
+  "written_files": [
+    {
+      "path": "src/core/trajCore/trajUtils.h",
+      "bytes": 1949
+    },
+    {
+      "path": "src/core/trajCore/trajUtils.cpp",
+      "bytes": 4287
+    },
+    {
+      "path": "test/unit/testTrajUtils.cpp",
+      "bytes": 1844
+    }
+  ]
+}

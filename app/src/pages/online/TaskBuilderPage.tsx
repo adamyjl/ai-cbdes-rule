@@ -687,10 +687,10 @@ export function TaskBuilderPage() {
   return (
     <PageScaffold title="模块化搭建" description="加载 task.analyze 结果，自动连线后编辑并发布为模块，支持草稿持久化。">
       <div className="md:col-span-4">
-        <Card title="分析结果" size="small" bordered={false} style={{ background: 'rgba(9, 9, 11, 0.6)' }}>
+        <Card title="分析结果" size="small" bordered style={{ background: '#ffffff', borderColor: 'rgba(24, 24, 27, 0.12)' }}>
           <Space direction="vertical" size={10} style={{ width: '100%' }}>
             <div>
-              <Typography.Text style={{ color: 'rgba(244,244,245,0.7)' }}>选择要加载的 task.analyze 记录</Typography.Text>
+              <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.72)' }}>选择要加载的 task.analyze 记录</Typography.Text>
               <Select
                 style={{ width: '100%', marginTop: 6 }}
                 placeholder="从档案中选择"
@@ -709,10 +709,10 @@ export function TaskBuilderPage() {
               />
             </div>
 
-            <Divider style={{ borderColor: 'rgba(63,63,70,0.6)', margin: '8px 0' }} />
+            <Divider style={{ borderColor: 'rgba(24, 24, 27, 0.12)', margin: '8px 0' }} />
 
             <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-              <Typography.Text style={{ color: 'rgba(244,244,245,0.7)' }}>隐藏胶水节点</Typography.Text>
+              <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.72)' }}>隐藏胶水节点</Typography.Text>
               <Switch checked={hideGlue} onChange={setHideGlue} />
             </Space>
 
@@ -732,8 +732,8 @@ export function TaskBuilderPage() {
         <Card
           title="库（拖拽到画布）"
           size="small"
-          bordered={false}
-          style={{ background: 'rgba(9, 9, 11, 0.6)', marginTop: 16 }}
+          bordered
+          style={{ background: '#ffffff', marginTop: 16, borderColor: 'rgba(24, 24, 27, 0.12)' }}
         >
           <Tabs
             items={[
@@ -743,13 +743,13 @@ export function TaskBuilderPage() {
                 children: (
                   <Space direction="vertical" size={8} style={{ width: '100%' }}>
                     <input
-                      className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm"
+                      className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400"
                       placeholder="搜索函数"
                       value={fnQ}
                       onChange={(e) => setFnQ(e.target.value)}
                     />
                     {fnBusy ? (
-                      <Typography.Text style={{ color: 'rgba(244,244,245,0.6)' }}>加载中…</Typography.Text>
+                      <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.6)' }}>加载中…</Typography.Text>
                     ) : (
                       <div className="space-y-2">
                         {fnItems.map((it: any) => {
@@ -772,10 +772,10 @@ export function TaskBuilderPage() {
                                 setFnDrawerId(payload.function_id)
                                 setFnDrawerOpen(true)
                               }}
-                              className="cursor-grab rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2 hover:bg-zinc-900/40"
+                              className="cursor-grab rounded-lg border border-zinc-200 bg-white px-3 py-2 hover:bg-[rgba(95,2,107,0.05)]"
                             >
-                              <div className="text-sm text-zinc-100">{payload.display_name}</div>
-                              <div className="text-xs text-zinc-400">{payload.module}</div>
+                              <div className="text-sm text-zinc-900">{payload.display_name}</div>
+                              <div className="text-xs text-zinc-500">{payload.module}</div>
                             </div>
                           )
                         })}
@@ -790,13 +790,13 @@ export function TaskBuilderPage() {
                 children: (
                   <Space direction="vertical" size={8} style={{ width: '100%' }}>
                     <input
-                      className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm"
+                      className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400"
                       placeholder="搜索模块"
                       value={modQ}
                       onChange={(e) => setModQ(e.target.value)}
                     />
                     {modBusy ? (
-                      <Typography.Text style={{ color: 'rgba(244,244,245,0.6)' }}>加载中…</Typography.Text>
+                      <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.6)' }}>加载中…</Typography.Text>
                     ) : (
                       <div className="space-y-2">
                         {modItems.map((m: any) => {
@@ -811,7 +811,7 @@ export function TaskBuilderPage() {
                               key={payload.module_key}
                               draggable
                               onDragStart={(e) => e.dataTransfer.setData('application/x-ai-cbdes-mod', JSON.stringify(payload))}
-                              className="cursor-grab rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2 hover:bg-zinc-900/40"
+                              className="cursor-grab rounded-lg border border-zinc-200 bg-white px-3 py-2 hover:bg-[rgba(95,2,107,0.05)]"
                             >
                               <div className="flex items-center justify-between gap-2">
                                 <div
@@ -821,8 +821,8 @@ export function TaskBuilderPage() {
                                     setModDrawerOpen(true)
                                   }}
                                 >
-                                  <div className="text-sm text-zinc-100">{payload.display_name}</div>
-                                  <div className="text-xs text-zinc-400">{payload.module_key}</div>
+                                  <div className="text-sm text-zinc-900">{payload.display_name}</div>
+                                  <div className="text-xs text-zinc-500">{payload.module_key}</div>
                                 </div>
                                 <Space size={6}>
                                   <Button
@@ -850,7 +850,7 @@ export function TaskBuilderPage() {
       </div>
 
       <div className="md:col-span-8">
-        <Card bordered={false} style={{ background: 'rgba(9, 9, 11, 0.6)' }}>
+        <Card bordered style={{ background: '#ffffff', borderColor: 'rgba(24, 24, 27, 0.12)' }}>
           <div className="flex items-center justify-between gap-2">
             <Space>
               <Button
@@ -887,8 +887,8 @@ export function TaskBuilderPage() {
             <Card
               title="画布"
               size="small"
-              bordered={false}
-              style={{ background: 'rgba(9, 9, 11, 0.6)' }}
+              bordered
+              style={{ background: '#ffffff', borderColor: 'rgba(24, 24, 27, 0.12)' }}
               bodyStyle={{ padding: 0 }}
             >
               <WorkflowCanvas
@@ -922,8 +922,8 @@ export function TaskBuilderPage() {
             <Card
               title="属性"
               size="small"
-              bordered={false}
-              style={{ background: 'rgba(9, 9, 11, 0.6)' }}
+              bordered
+              style={{ background: '#ffffff', borderColor: 'rgba(24, 24, 27, 0.12)' }}
             >
               <WorkflowInspector
                 nodes={nodes}
@@ -962,23 +962,23 @@ export function TaskBuilderPage() {
         cancelText="取消"
       >
         <Space direction="vertical" size={10} style={{ width: '100%' }}>
-          <Typography.Text style={{ color: 'rgba(244,244,245,0.7)' }}>
+          <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.72)' }}>
             模块 Key（可选：留空则自动生成/自动覆盖相似模块）
           </Typography.Text>
           <input
-            className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm"
+            className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400"
             value={publishModuleKey}
             onChange={(e) => setPublishModuleKey(e.target.value)}
             placeholder="例如：planning_debug_info"
           />
-          <Typography.Text style={{ color: 'rgba(244,244,245,0.7)' }}>名称提示（可选）</Typography.Text>
+          <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.72)' }}>名称提示（可选）</Typography.Text>
           <input
-            className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm"
+            className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400"
             value={publishNameHint}
             onChange={(e) => setPublishNameHint(e.target.value)}
             placeholder="例如：发布规划调试信息"
           />
-          <Typography.Text style={{ color: 'rgba(244,244,245,0.55)' }}>
+          <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.62)' }}>
             若服务端未配置 LLM（DashScope/Aliyun），将以你输入的 Key/名称直接发布，不做命名与描述增强。
           </Typography.Text>
         </Space>

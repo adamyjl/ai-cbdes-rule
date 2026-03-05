@@ -1,7 +1,8 @@
-import { Button, Card, Divider, Input, Modal, Space, Switch, Tabs, Typography, message } from 'antd'
+import { Button, Card, Divider, Input, Modal, Select, Space, Switch, Tabs, Typography, message } from 'antd'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { PageScaffold } from '../PageScaffold'
 import {
+  archiveGet,
   archiveList,
   codegenGlue,
   orchestratorGenerateCode,
@@ -25,6 +26,8 @@ import { extractPureCppFromMarkdown } from '../../utils/cppExtract'
 const STORAGE_KEY = 'builder:visual-builder:v1'
 const EXPORT_EVENT_KEY = 'builder:visual-builder:lastExportEventId:v1'
 
+type ExportMode = 'reuse' | 'llm' | 'controlled'
+
 function loadDraft():
   | {
       rootDir: string
@@ -34,6 +37,7 @@ function loadDraft():
       taskContext: string
       lastPublishedModuleKey: string | null
       lastExportEventId: string | null
+      exportMode: ExportMode
     }
   | null {
   try {
@@ -49,7 +53,11 @@ function loadDraft():
       taskContext: String((v as any).taskContext || ''),
       lastPublishedModuleKey:
         typeof (v as any).lastPublishedModuleKey === 'string' ? (v as any).lastPublishedModuleKey : null,
-      lastExportEventId: typeof (v as any).lastExportEventId === 'string' ? String((v as any).lastExportEventId) : null
+      lastExportEventId: typeof (v as any).lastExportEventId === 'string' ? String((v as any).lastExportEventId) : null,
+      exportMode:
+        (v as any).exportMode === 'reuse' || (v as any).exportMode === 'llm' || (v as any).exportMode === 'controlled'
+          ? ((v as any).exportMode as ExportMode)
+          : 'llm'
     }
   } catch {
     return null
@@ -64,6 +72,7 @@ function saveDraft(v: {
   taskContext: string
   lastPublishedModuleKey: string | null
   lastExportEventId: string | null
+  exportMode: ExportMode
 }) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(v))
@@ -143,6 +152,7 @@ export function VisualBuilderPage() {
   const [exportedCode, setExportedCode] = useState('')
   const [exportedCodeRaw, setExportedCodeRaw] = useState('')
   const [lastExportEventId, setLastExportEventId] = useState<string | null>(null)
+  const [exportMode, setExportMode] = useState<ExportMode>('llm')
 
   const [gluePromptOpen, setGluePromptOpen] = useState(false)
   const [glueBusy, setGlueBusy] = useState(false)
@@ -160,6 +170,7 @@ export function VisualBuilderPage() {
       setTaskContext(saved.taskContext || '')
       setLastPublishedModuleKey(saved.lastPublishedModuleKey)
       setLastExportEventId(saved.lastExportEventId)
+      setExportMode(saved.exportMode || 'llm')
       window.setTimeout(() => setFitViewToken((v) => v + 1), 0)
     }
 
@@ -174,9 +185,15 @@ export function VisualBuilderPage() {
       setLastExportEventId(finalExportId)
       void (async () => {
         try {
-          const list = await archiveList(500)
-          const ev = list.find((x) => String((x as any)?.id || '') === String(finalExportId))
-          const code = String((ev as any)?.payload?.code || '')
+          let code = ''
+          try {
+            const ev = await archiveGet(finalExportId)
+            code = String((ev as any)?.payload?.code || '')
+          } catch {
+            const list = await archiveList(500)
+            const ev = list.find((x) => String((x as any)?.id || '') === String(finalExportId))
+            code = String((ev as any)?.payload?.code || '')
+          }
           if (code.trim()) {
             setExportedCode(code)
             setExportedCodeRaw(code)
@@ -189,10 +206,10 @@ export function VisualBuilderPage() {
 
   useEffect(() => {
     const t = window.setTimeout(() => {
-      saveDraft({ rootDir, nodes, edges, hideGlue, taskContext, lastPublishedModuleKey, lastExportEventId })
+      saveDraft({ rootDir, nodes, edges, hideGlue, taskContext, lastPublishedModuleKey, lastExportEventId, exportMode })
     }, 350)
     return () => window.clearTimeout(t)
-  }, [edges, hideGlue, lastPublishedModuleKey, lastExportEventId, nodes, rootDir, taskContext])
+  }, [edges, exportMode, hideGlue, lastPublishedModuleKey, lastExportEventId, nodes, rootDir, taskContext])
 
   useEffect(() => {
     const t = window.setTimeout(() => {
@@ -660,7 +677,83 @@ export function VisualBuilderPage() {
       .join('\n')
   }
 
-  async function buildExportPrompt() {
+  function sanitizeRelName(s: string) {
+    return String(s || '')
+      .trim()
+      .replace(/[\\/:*?"<>|]+/g, '_')
+      .replace(/\s+/g, '_')
+      .slice(0, 80)
+  }
+
+  function clipText(s: string, maxChars: number) {
+    const t = String(s || '')
+    if (t.length <= maxChars) return { text: t, clipped: false }
+    return { text: t.slice(0, Math.max(0, maxChars)) + '\n\n(…已截断)', clipped: true }
+  }
+
+  async function fetchFunctionCodeByIds(functionIds: string[]) {
+    const ids = Array.from(new Set(functionIds.filter(Boolean)))
+    const out = new Map<
+      string,
+      { ok: boolean; code: string; file_path: string; signature: string; doc_zh: string; display_name?: string }
+    >()
+    if (!ids.length) return out
+
+    let cursor = 0
+    const workers = Array.from({ length: Math.min(6, ids.length) }, async () => {
+      while (cursor < ids.length) {
+        const fid = ids[cursor]
+        cursor += 1
+        try {
+          const res = await ragGetFunction(fid)
+          if (!res.ok || !res.function) {
+            out.set(fid, { ok: false, code: '', file_path: '', signature: '', doc_zh: '' })
+            continue
+          }
+          const fn = res.function as any
+          out.set(fid, {
+            ok: true,
+            code: String(fn.code || ''),
+            file_path: String(fn.file_path || ''),
+            signature: String(fn.signature || ''),
+            doc_zh: String(fn.doc_zh || ''),
+            display_name: String(fn.display_name || fn.signature || fn.function_id || fid)
+          })
+        } catch {
+          out.set(fid, { ok: false, code: '', file_path: '', signature: '', doc_zh: '' })
+        }
+      }
+    })
+    await Promise.all(workers)
+    return out
+  }
+
+  function buildStrategySection(mode: ExportMode) {
+    if (mode === 'reuse') return ''
+    const prefer = [
+      '优先复用已有函数与类，不要改动其实现细节（除非无法编译/接口不一致）。',
+      '优先输出可在门禁工作区独立编译的最小工程（必要时补充缺失头文件与实现）。',
+      '优先使用清晰的模块目录结构：include/、src/、test/。',
+      '优先用显式类型与显式赋值，避免隐式转换带来的告警。'
+    ]
+    const must = [
+      '必须输出可落地编译运行的 C/C++ 多文件工程（包含必要 .h/.cpp）。',
+      '必须保证所有 #include \"xxx\" 在输出文件集合中可找到（不允许引用 ../../Common 之类外部路径）。',
+      '必须遵守附录中的 C++ 统一规范（控制流/命名/注释要求）。',
+      '必须按“### 相对路径 + ```cpp”格式输出每个文件。'
+    ]
+    const header = mode === 'controlled' ? '## 策略（受控组合）' : '## 策略（模型调用）'
+    return [
+      header,
+      '### Prefer',
+      ...prefer.map((x) => `- ${x}`),
+      '',
+      '### Must',
+      ...must.map((x) => `- ${x}`)
+    ].join('\n')
+  }
+
+  async function buildExportPrompt(mode: ExportMode) {
     const allNodes = nodes
     const allEdges = edges
     const byId = new Map(allNodes.map((n) => [n.id, n] as const))
@@ -688,28 +781,7 @@ export function VisualBuilderPage() {
       )
     )
 
-    const fnCodeById = new Map<string, { ok: boolean; code: string; file_path: string; signature: string; doc_zh: string }>()
-    await Promise.all(
-      uniqueFnIds.map(async (fid) => {
-        try {
-          const res = await ragGetFunction(fid)
-          if (!res.ok || !res.function) {
-            fnCodeById.set(fid, { ok: false, code: '', file_path: '', signature: '', doc_zh: '' })
-            return
-          }
-          const fn = res.function as any
-          fnCodeById.set(fid, {
-            ok: true,
-            code: String(fn.code || ''),
-            file_path: String(fn.file_path || ''),
-            signature: String(fn.signature || ''),
-            doc_zh: String(fn.doc_zh || '')
-          })
-        } catch {
-          fnCodeById.set(fid, { ok: false, code: '', file_path: '', signature: '', doc_zh: '' })
-        }
-      })
-    )
+    const fnCodeById = await fetchFunctionCodeByIds(uniqueFnIds)
 
     function nodeSourceBlock(n: WorkflowNode) {
       const fid = String(n.function_id || '')
@@ -720,7 +792,8 @@ export function VisualBuilderPage() {
           const docZh = String(p.doc_zh || '')
           const head = `### ${n.display_name} (glue)`
           const docs = docZh ? `\n\n${docZh.trim()}` : ''
-          const code = glueCode.trim() ? `\n\n\`\`\`cpp\n${glueCode.trim()}\n\`\`\`` : '\n\n(无胶水代码)'
+          const clipped = clipText(glueCode.trim(), 12000)
+          const code = clipped.text.trim() ? `\n\n\`\`\`cpp\n${clipped.text.trim()}\n\`\`\`` : '\n\n(无胶水代码)'
           return `${head}${docs}${code}`
         } catch {
           return `### ${n.display_name} (glue)\n\n(胶水代码解析失败)`
@@ -737,7 +810,8 @@ export function VisualBuilderPage() {
         .filter(Boolean)
         .join('\n')
       const docs = info.doc_zh ? `\n\n${info.doc_zh.trim()}` : ''
-      const code = info.code.trim() ? `\n\n\`\`\`cpp\n${info.code.trim()}\n\`\`\`` : ''
+      const clipped = clipText(String((info as any).code || '').trim(), 14000)
+      const code = clipped.text.trim() ? `\n\n\`\`\`cpp\n${clipped.text.trim()}\n\`\`\`` : ''
       return `${head}${meta ? `\n\n${meta}` : ''}${docs}${code}`
     }
 
@@ -779,9 +853,136 @@ export function VisualBuilderPage() {
       : ''
 
     const part2 = ['## 源代码与注释', ...moduleSections, looseSection, edgeSection].filter(Boolean).join('\n\n')
-    const part3 = `## 生成要求\n\n请输出结果为 Markdown，若多文件请使用以下格式：\n\n### path/to/file.cpp\n\`\`\`cpp\n...\n\`\`\`\n\n---\n\n【C++代码改写统一规范（必须严格遵守）】\n${CPP_SPEC}`
+    const strategy = buildStrategySection(mode)
+    const part3 = [
+      '## 生成要求',
+      '请输出结果为 Markdown，若多文件请使用以下格式：',
+      '',
+      '### path/to/file.cpp',
+      '```cpp',
+      '...',
+      '```',
+      '',
+      strategy ? `---\n\n${strategy}` : '',
+      '---',
+      '',
+      '【C++代码改写统一规范（必须严格遵守）】',
+      CPP_SPEC
+    ]
+      .filter(Boolean)
+      .join('\n')
 
     return [part1, part2, part3].join('\n\n---\n\n').trim()
+  }
+
+  function parseFilesFromMarkdown(md: string) {
+    const s = String(md || '')
+    const re = /^###\s+(.+?)\s*$\n```(?:cpp|c\+\+|c)\s*\n([\s\S]*?)\n```\s*$/gim
+    const files: Array<{ path: string; code: string }> = []
+    let m: RegExpExecArray | null
+    while ((m = re.exec(s))) {
+      const path = String(m[1] || '').trim()
+      const code = String(m[2] || '').trim()
+      if (path && code) files.push({ path, code })
+    }
+    return files
+  }
+
+  function formatFilesToMarkdown(files: Array<{ path: string; code: string }>) {
+    return files
+      .map((f) => `### ${f.path}\n\`\`\`cpp\n${String(f.code || '').trim()}\n\`\`\``)
+      .join('\n\n')
+      .trim()
+  }
+
+  async function buildReuseExportResult() {
+    const functionNodes = nodes.filter((n) => String(n.kind || '') !== 'module')
+    const fnIds = functionNodes
+      .filter((n) => !String(n.function_id || '').startsWith('glue:') && String(n.file_path || '') !== '(glue)')
+      .map((n) => String(n.function_id || ''))
+      .filter(Boolean)
+    const fnCodeById = await fetchFunctionCodeByIds(fnIds)
+
+    const files: Array<{ path: string; code: string }> = []
+    for (const n of functionNodes) {
+      const fid = String(n.function_id || '')
+      const baseName = sanitizeRelName(String(n.display_name || fid || 'node'))
+      if (fid.startsWith('glue:') || String(n.file_path || '') === '(glue)') {
+        const p = safeParseJson(String(n.paramsJson || '')) || {}
+        const glue = String((p as any).glue_code || '').trim()
+        if (!glue) continue
+        files.push({ path: `glue/${baseName}.cpp`, code: glue })
+        continue
+      }
+      const info = fnCodeById.get(fid)
+      const code = String(info?.ok ? info?.code : '').trim()
+      if (!code) continue
+      files.push({ path: `reuse/${baseName}.cpp`, code })
+    }
+    files.push({ path: 'main.cpp', code: 'int main() { return 0; }' })
+    return formatFilesToMarkdown(files)
+  }
+
+  async function buildControlledExportResult() {
+    const functionNodes = nodes.filter((n) => String(n.kind || '') !== 'module')
+    const fnIds = functionNodes
+      .filter((n) => !String(n.function_id || '').startsWith('glue:') && String(n.file_path || '') !== '(glue)')
+      .map((n) => String(n.function_id || ''))
+      .filter(Boolean)
+    const fnCodeById = await fetchFunctionCodeByIds(fnIds)
+
+    const candidates = functionNodes
+      .filter((n) => {
+        const fid = String(n.function_id || '')
+        const info = fnCodeById.get(fid)
+        if (!fid || !info?.ok) return false
+        const code = String(info.code || '').trim()
+        if (code.length < 120) return false
+        if (String(info.doc_zh || '').trim().length < 20) return false
+        return true
+      })
+      .slice(0, 12)
+
+    const hqFiles: Array<{ path: string; code: string }> = []
+    const hqPathSet = new Set<string>()
+    for (const n of candidates) {
+      const fid = String(n.function_id || '')
+      const info = fnCodeById.get(fid)
+      const code = String(info?.code || '').trim()
+      if (!code) continue
+      const name = sanitizeRelName(String(n.display_name || fid))
+      const path = `hq/${name}.cpp`
+      hqPathSet.add(path)
+      hqFiles.push({ path, code })
+    }
+
+    const edgeText = buildEdgeText(nodes, edges)
+    const requirement = [
+      '## 受控组合任务',
+      '你需要在不修改“高质量函数文件（hq/）”的前提下，生成 glue code 与集成入口，将其按画布连接关系拼装为可编译工程。',
+      '',
+      '### 必须遵守',
+      '- 不允许改动 hq/ 下任何文件内容；若接口不匹配，只能通过新增 glue/ 包装与适配。',
+      '- 所有 include 必须在输出文件集合中可找到，不允许引用工作区外相对路径。',
+      '- 输出必须为多文件 Markdown（### path + ```cpp）。',
+      '',
+      '### 连接关系',
+      edgeText ? edgeText : '(无连线)',
+      '',
+      '### 高质量函数（只读，不允许修改）',
+      hqFiles.length ? formatFilesToMarkdown(hqFiles) : '(无)'
+    ].join('\n')
+
+    const prompt = [requirement, '---', buildStrategySection('controlled'), '---', `【C++代码改写统一规范（必须严格遵守）】\n${CPP_SPEC}`]
+      .filter(Boolean)
+      .join('\n\n')
+
+    const res = await orchestratorGenerateCode({ prompt, source_event_id: null, source_event_type: 'visual-builder' })
+    if (!res.ok) throw new Error(res.error || 'generate_failed')
+    const llmMd = String(res.code || '').trim()
+    const llmFiles = parseFilesFromMarkdown(llmMd).filter((f) => !hqPathSet.has(f.path))
+    const merged = formatFilesToMarkdown([...hqFiles, ...llmFiles])
+    return { merged, llmLog: String(res.log || '').trim(), llmKeyPoints: res.key_points, prompt }
   }
 
   async function runExport() {
@@ -791,15 +992,30 @@ export function VisualBuilderPage() {
     }
     setExportBusy(true)
     try {
-      const prompt = await buildExportPrompt()
-      const res = await orchestratorGenerateCode({
-        prompt,
-        source_event_id: null,
-        source_event_type: 'visual-builder'
-      })
-      if (!res.ok) throw new Error(res.error || 'generate_failed')
-      const nextResult = String(res.code || '').trim()
-      const extracted = extractPureCppFromMarkdown(nextResult)
+      let prompt = ''
+      let rawOut = ''
+      let logText = ''
+      let keyPoints: string[] = []
+
+      if (exportMode === 'reuse') {
+        rawOut = await buildReuseExportResult()
+        prompt = '(export_mode=reuse)'
+      } else if (exportMode === 'controlled') {
+        const out = await buildControlledExportResult()
+        rawOut = out.merged
+        prompt = out.prompt
+        logText = out.llmLog
+        keyPoints = Array.isArray(out.llmKeyPoints) ? out.llmKeyPoints.map((x: any) => String(x)) : []
+      } else {
+        prompt = await buildExportPrompt('llm')
+        const res = await orchestratorGenerateCode({ prompt, source_event_id: null, source_event_type: 'visual-builder' })
+        if (!res.ok) throw new Error(res.error || 'generate_failed')
+        rawOut = String(res.code || '').trim()
+        logText = String(res.log || '').trim()
+        keyPoints = Array.isArray(res.key_points) ? res.key_points.map((x) => String(x)) : []
+      }
+
+      const extracted = extractPureCppFromMarkdown(rawOut)
       setExportedCodeRaw(extracted.raw)
       setExportedCode(extracted.display)
       try {
@@ -807,10 +1023,11 @@ export function VisualBuilderPage() {
           source_event: null,
           prompt,
           code: extracted.raw,
-          log: String(res.log || '').trim(),
-          key_points: Array.isArray(res.key_points) ? res.key_points.map((x) => String(x)) : [],
+          log: logText,
+          key_points: keyPoints,
           graph: { nodes, edges, root_dir: rootDir, task_context: taskContext, hide_glue: hideGlue },
-          source: 'visual-builder'
+          source: 'visual-builder',
+          export_mode: exportMode
         })
         const exportId = String(ev?.id || '')
         if (exportId) {
@@ -819,11 +1036,12 @@ export function VisualBuilderPage() {
             localStorage.setItem(EXPORT_EVENT_KEY, exportId)
           } catch {
           }
-          saveDraft({ rootDir, nodes, edges, hideGlue, taskContext, lastPublishedModuleKey, lastExportEventId: exportId })
+          saveDraft({ rootDir, nodes, edges, hideGlue, taskContext, lastPublishedModuleKey, lastExportEventId: exportId, exportMode })
         }
-      } catch {
+        message.success('已导出并入档')
+      } catch (e2) {
+        message.warning(`已导出但入档失败：${e2 instanceof Error ? e2.message : 'archive_failed'}`)
       }
-      message.success('已导出并入档')
     } catch (e) {
       message.error(e instanceof Error ? e.message : '导出失败')
     } finally {
@@ -834,18 +1052,18 @@ export function VisualBuilderPage() {
   return (
     <PageScaffold title="图形化输入" description="拖拽搭建新模块，可选生成胶水，发布到模块库并持久化草稿。">
       <div className="md:col-span-4">
-        <Card title="上下文" size="small" bordered={false} style={{ background: 'rgba(9, 9, 11, 0.6)' }}>
+        <Card title="上下文" size="small" bordered style={{ background: '#ffffff', borderColor: 'rgba(24, 24, 27, 0.12)' }}>
           <Space direction="vertical" size={10} style={{ width: '100%' }}>
-            <Typography.Text style={{ color: 'rgba(244,244,245,0.7)' }}>任务描述（用于胶水生成，可选）</Typography.Text>
+            <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.72)' }}>任务描述（用于胶水生成，可选）</Typography.Text>
             <textarea
-              className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm"
+              className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400"
               rows={4}
               value={taskContext}
               onChange={(e) => setTaskContext(e.target.value)}
               placeholder="例如：将上游规划结果字段转换为下游控制模块所需输入"
             />
             <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-              <Typography.Text style={{ color: 'rgba(244,244,245,0.7)' }}>隐藏胶水节点</Typography.Text>
+              <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.72)' }}>隐藏胶水节点</Typography.Text>
               <Switch checked={hideGlue} onChange={setHideGlue} />
             </Space>
             {lastPublishedModuleKey ? (
@@ -864,8 +1082,8 @@ export function VisualBuilderPage() {
         <Card
           title="库（拖拽到画布）"
           size="small"
-          bordered={false}
-          style={{ background: 'rgba(9, 9, 11, 0.6)', marginTop: 16 }}
+          bordered
+          style={{ background: '#ffffff', marginTop: 16, borderColor: 'rgba(24, 24, 27, 0.12)' }}
         >
           <Tabs
             items={[
@@ -875,13 +1093,13 @@ export function VisualBuilderPage() {
                 children: (
                   <Space direction="vertical" size={8} style={{ width: '100%' }}>
                     <input
-                      className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm"
+                      className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400"
                       placeholder="搜索函数"
                       value={fnQ}
                       onChange={(e) => setFnQ(e.target.value)}
                     />
                     {fnBusy ? (
-                      <Typography.Text style={{ color: 'rgba(244,244,245,0.6)' }}>加载中…</Typography.Text>
+                      <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.6)' }}>加载中…</Typography.Text>
                     ) : (
                       <div className="space-y-2">
                         {fnItems.map((it: any) => {
@@ -907,10 +1125,10 @@ export function VisualBuilderPage() {
                                 setFnDrawerOpen(true)
                                 void hydrateDraggedNode('function', payload.function_id)
                               }}
-                              className="cursor-grab rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2 hover:bg-zinc-900/40"
+                              className="cursor-grab rounded-lg border border-zinc-200 bg-white px-3 py-2 hover:bg-[rgba(95,2,107,0.05)]"
                             >
-                              <div className="text-sm text-zinc-100">{payload.display_name}</div>
-                              <div className="text-xs text-zinc-400">{payload.module}</div>
+                              <div className="text-sm text-zinc-900">{payload.display_name}</div>
+                              <div className="text-xs text-zinc-500">{payload.module}</div>
                             </div>
                           )
                         })}
@@ -925,13 +1143,13 @@ export function VisualBuilderPage() {
                 children: (
                   <Space direction="vertical" size={8} style={{ width: '100%' }}>
                     <input
-                      className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm"
+                      className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400"
                       placeholder="搜索模块"
                       value={modQ}
                       onChange={(e) => setModQ(e.target.value)}
                     />
                     {modBusy ? (
-                      <Typography.Text style={{ color: 'rgba(244,244,245,0.6)' }}>加载中…</Typography.Text>
+                      <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.6)' }}>加载中…</Typography.Text>
                     ) : (
                       <div className="space-y-2">
                         {modItems.map((m: any) => {
@@ -948,7 +1166,7 @@ export function VisualBuilderPage() {
                               onDragStart={(e) => {
                                 e.dataTransfer.setData('application/x-ai-cbdes-mod', JSON.stringify(payload))
                               }}
-                              className="cursor-grab rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2 hover:bg-zinc-900/40"
+                              className="cursor-grab rounded-lg border border-zinc-200 bg-white px-3 py-2 hover:bg-[rgba(95,2,107,0.05)]"
                             >
                               <div className="flex items-center justify-between gap-2">
                                 <div
@@ -959,8 +1177,8 @@ export function VisualBuilderPage() {
                                     void hydrateDraggedNode('module', payload.module_key)
                                   }}
                                 >
-                                  <div className="text-sm text-zinc-100">{payload.display_name}</div>
-                                  <div className="text-xs text-zinc-400">{payload.module_key}</div>
+                                  <div className="text-sm text-zinc-900">{payload.display_name}</div>
+                                  <div className="text-xs text-zinc-500">{payload.module_key}</div>
                                 </div>
                                 <Space size={6}>
                                   <Button
@@ -988,7 +1206,7 @@ export function VisualBuilderPage() {
       </div>
 
       <div className="md:col-span-8">
-        <Card bordered={false} style={{ background: 'rgba(9, 9, 11, 0.6)' }}>
+        <Card bordered style={{ background: '#ffffff', borderColor: 'rgba(24, 24, 27, 0.12)' }}>
           <div className="flex items-center justify-between gap-2">
             <Space>
               <Button
@@ -1009,6 +1227,16 @@ export function VisualBuilderPage() {
               <Button type="primary" onClick={() => setPublishOpen(true)}>
                 发布
               </Button>
+              <Select
+                value={exportMode}
+                onChange={(v) => setExportMode(v as ExportMode)}
+                style={{ width: 160 }}
+                options={[
+                  { value: 'reuse', label: '导出：直接复用' },
+                  { value: 'llm', label: '导出：模型调用' },
+                  { value: 'controlled', label: '导出：受控组合' }
+                ]}
+              />
               <Button onClick={() => void runExport()} loading={exportBusy} disabled={!nodes.length}>
                 导出
               </Button>
@@ -1021,8 +1249,8 @@ export function VisualBuilderPage() {
             <Card
               title="画布"
               size="small"
-              bordered={false}
-              style={{ background: 'rgba(9, 9, 11, 0.6)' }}
+              bordered
+              style={{ background: '#ffffff', borderColor: 'rgba(24, 24, 27, 0.12)' }}
               bodyStyle={{ padding: 0 }}
             >
               <WorkflowCanvas
@@ -1066,8 +1294,8 @@ export function VisualBuilderPage() {
             <Card
               title="属性"
               size="small"
-              bordered={false}
-              style={{ background: 'rgba(9, 9, 11, 0.6)' }}
+              bordered
+              style={{ background: '#ffffff', borderColor: 'rgba(24, 24, 27, 0.12)' }}
             >
               <WorkflowInspector
                 nodes={nodes}
@@ -1083,8 +1311,8 @@ export function VisualBuilderPage() {
                 busy={false}
               />
 
-              <Divider style={{ borderColor: 'rgba(63,63,70,0.7)', margin: '12px 0' }} />
-              <Typography.Text style={{ color: 'rgba(244,244,245,0.85)' }}>导出的代码栏</Typography.Text>
+              <Divider style={{ borderColor: 'rgba(24, 24, 27, 0.12)', margin: '12px 0' }} />
+              <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.82)' }}>导出的代码栏</Typography.Text>
               <div className="mt-2">
                 <Input.TextArea value={exportedCode} onChange={(e) => setExportedCode(e.target.value)} rows={12} />
               </div>
@@ -1112,10 +1340,10 @@ export function VisualBuilderPage() {
         cancelText="取消连接"
       >
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
-          <Typography.Text style={{ color: 'rgba(244,244,245,0.8)' }}>
+          <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.82)' }}>
             该连线的上游输出与下游输入没有任何字段名一致，是否生成一个胶水节点做格式转换？
           </Typography.Text>
-          <Typography.Text style={{ color: 'rgba(244,244,245,0.55)' }}>
+          <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.62)' }}>
             若服务端未配置 LLM（DashScope/Aliyun），将返回错误，你可以取消并手动调整输入输出 JSON。
           </Typography.Text>
         </Space>
@@ -1131,16 +1359,16 @@ export function VisualBuilderPage() {
         cancelText="取消"
       >
         <Space direction="vertical" size={10} style={{ width: '100%' }}>
-          <Typography.Text style={{ color: 'rgba(244,244,245,0.7)' }}>模块 Key（可选）</Typography.Text>
+          <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.72)' }}>模块 Key（可选）</Typography.Text>
           <input
-            className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm"
+            className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400"
             value={publishModuleKey}
             onChange={(e) => setPublishModuleKey(e.target.value)}
             placeholder="例如：new_visual_module"
           />
-          <Typography.Text style={{ color: 'rgba(244,244,245,0.7)' }}>名称提示（可选）</Typography.Text>
+          <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.72)' }}>名称提示（可选）</Typography.Text>
           <input
-            className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm"
+            className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400"
             value={publishNameHint}
             onChange={(e) => setPublishNameHint(e.target.value)}
             placeholder="例如：图形化输入生成模块"

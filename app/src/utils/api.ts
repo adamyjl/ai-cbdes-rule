@@ -188,7 +188,10 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
     else externalSignal.addEventListener('abort', () => ac.abort(), { once: true })
   }
 
-  const timeoutMs = url.startsWith('/py/orchestrator/') || url.startsWith('/py/cot/') ? 180_000 : 60_000
+  const timeoutMs =
+    url.startsWith('/py/orchestrator/') || url.startsWith('/py/cot/') || url.startsWith('/py/archive/')
+      ? 180_000
+      : 60_000
   const t = window.setTimeout(() => ac.abort(), timeoutMs)
 
   const res = await fetch(url, {
@@ -197,6 +200,30 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
     headers: {
       ...(init?.headers ?? {}),
       'content-type': 'application/json'
+    }
+  }).finally(() => window.clearTimeout(t))
+  if (!res.ok) {
+    const body = await parseJsonOrText(res)
+    throw new Error(typeof body === 'string' ? body : JSON.stringify(body))
+  }
+  return (await res.json()) as T
+}
+
+async function requestFormData<T>(url: string, init?: RequestInit): Promise<T> {
+  const ac = new AbortController()
+  const externalSignal = init?.signal
+  if (externalSignal) {
+    if (externalSignal.aborted) ac.abort()
+    else externalSignal.addEventListener('abort', () => ac.abort(), { once: true })
+  }
+
+  const timeoutMs = 300_000
+  const t = window.setTimeout(() => ac.abort(), timeoutMs)
+  const res = await fetch(url, {
+    ...init,
+    signal: ac.signal,
+    headers: {
+      ...(init?.headers ?? {})
     }
   }).finally(() => window.clearTimeout(t))
   if (!res.ok) {
@@ -220,6 +247,21 @@ export async function ragScan(root_dir: string) {
     {
       method: 'POST',
       body: JSON.stringify({ root_dir })
+    }
+  )
+}
+
+export async function ragUploadCodeFiles(params: { files: Array<{ file: File; relativePath: string }>; upload_id?: string }) {
+  const fd = new FormData()
+  if (params.upload_id) fd.append('upload_id', params.upload_id)
+  for (const it of params.files) {
+    fd.append('files', it.file, it.relativePath)
+  }
+  return requestFormData<{ ok: boolean; upload_id: string; root_dir: string; files_total: number; files_saved: number; files_skipped: number; bytes: number }>(
+    '/py/rag/upload',
+    {
+      method: 'POST',
+      body: fd
     }
   )
 }
@@ -531,6 +573,10 @@ export async function archiveList(limit: number) {
     throw new Error(typeof body === 'string' ? body : JSON.stringify(body))
   }
   return (await res.json()) as ArchiveEvent[]
+}
+
+export async function archiveGet(event_id: string) {
+  return requestJson<ArchiveEvent>(`/py/archive/events/${encodeURIComponent(String(event_id || ''))}`)
 }
 
 export async function archiveAppend(type: string, payload: Record<string, unknown>) {

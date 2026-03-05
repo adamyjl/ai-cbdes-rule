@@ -220,9 +220,9 @@ export function FunctionOrchestrationPage() {
           }
           size="small"
           bordered={false}
-          style={{ background: 'rgba(9, 9, 11, 0.6)' }}
+          style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}
         >
-          <Typography.Paragraph style={{ marginTop: 0, color: 'rgba(244,244,245,0.72)' }}>
+          <Typography.Paragraph style={{ marginTop: 0, color: 'var(--app-text-muted)' }}>
             从档案选择来源（推荐：`cot.disambiguation` 的 confirmed 提示词），系统会把最终用于生成的提示词展示在下方；点击“生成”将直接产出目标 C++ 代码。
           </Typography.Paragraph>
           <div className="mb-3">
@@ -258,14 +258,24 @@ export function FunctionOrchestrationPage() {
 
       <div className="md:col-span-7">
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
-          <Card title="生成的 C++ 目标代码" size="small" bordered={false} style={{ background: 'rgba(9, 9, 11, 0.6)' }}>
+          <Card
+            title="生成的 C++ 目标代码"
+            size="small"
+            bordered={false}
+            style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}
+          >
             <Input.TextArea value={result} onChange={(e) => setResult(e.target.value)} rows={12} />
           </Card>
-          <Card title="生成日志 / 解释 / 要点" size="small" bordered={false} style={{ background: 'rgba(9, 9, 11, 0.6)' }}>
+          <Card
+            title="生成日志 / 解释 / 要点"
+            size="small"
+            bordered={false}
+            style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}
+          >
             {keyPoints.length ? (
               <div className="mb-3">
                 <Typography.Text>要点</Typography.Text>
-                <div className="mt-2 whitespace-pre-wrap text-sm text-zinc-200">
+                <div className="mt-2 whitespace-pre-wrap text-sm" style={{ color: 'var(--app-text)' }}>
                   {keyPoints.map((x, i) => `- ${x}`).join('\n')}
                 </div>
               </div>

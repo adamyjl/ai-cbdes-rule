@@ -68,7 +68,7 @@ export function WorkflowInspector(props: {
                 label: `全局输入 (${summary.globalInputs.length})`,
                 children:
                   summary.globalInputs.length === 0 ? (
-                    <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>所有输入已被满足</Typography.Text>
+                    <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.72)' }}>所有输入已被满足</Typography.Text>
                   ) : (
                     <Space direction="vertical" style={{ width: '100%' }} size={8}>
                       {summary.globalInputs.map((it) => (
@@ -77,13 +77,13 @@ export function WorkflowInspector(props: {
                           style={{
                             padding: 10,
                             borderRadius: 10,
-                            border: '1px solid rgba(63,63,70,0.7)',
-                            background: 'rgba(24,24,27,0.5)'
+                            border: '1px solid rgba(24, 24, 27, 0.14)',
+                            background: 'rgba(95, 2, 107, 0.05)'
                           }}
                         >
-                          <Typography.Text style={{ color: 'rgba(244,244,245,0.9)' }}>{it.nodeName}</Typography.Text>
+                          <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.9)' }}>{it.nodeName}</Typography.Text>
                           <br />
-                          <Typography.Text style={{ color: 'rgba(244,244,245,0.6)' }}>
+                          <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.62)' }}>
                             {it.keys.length ? it.keys.join(', ') : '(无可解析的输入键)'}
                           </Typography.Text>
                         </div>
@@ -96,7 +96,7 @@ export function WorkflowInspector(props: {
                 label: `全局输出 (${summary.globalOutputs.length})`,
                 children:
                   summary.globalOutputs.length === 0 ? (
-                    <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>没有未被消费的输出</Typography.Text>
+                    <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.72)' }}>没有未被消费的输出</Typography.Text>
                   ) : (
                     <Space direction="vertical" style={{ width: '100%' }} size={8}>
                       {summary.globalOutputs.map((it) => (
@@ -105,13 +105,13 @@ export function WorkflowInspector(props: {
                           style={{
                             padding: 10,
                             borderRadius: 10,
-                            border: '1px solid rgba(63,63,70,0.7)',
-                            background: 'rgba(24,24,27,0.5)'
+                            border: '1px solid rgba(24, 24, 27, 0.14)',
+                            background: 'rgba(95, 2, 107, 0.05)'
                           }}
                         >
-                          <Typography.Text style={{ color: 'rgba(244,244,245,0.9)' }}>{it.nodeName}</Typography.Text>
+                          <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.9)' }}>{it.nodeName}</Typography.Text>
                           <br />
-                          <Typography.Text style={{ color: 'rgba(244,244,245,0.6)' }}>
+                          <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.62)' }}>
                             {it.keys.length ? it.keys.join(', ') : '(无可解析的输出键)'}
                           </Typography.Text>
                         </div>
@@ -124,7 +124,7 @@ export function WorkflowInspector(props: {
                 label: `连接 (${summary.connections.length})`,
                 children:
                   summary.connections.length === 0 ? (
-                    <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>暂无连接</Typography.Text>
+                    <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.72)' }}>暂无连接</Typography.Text>
                   ) : (
                     <Space direction="vertical" style={{ width: '100%' }} size={8}>
                       {summary.connections.map((c, idx) => (
@@ -133,13 +133,13 @@ export function WorkflowInspector(props: {
                           style={{
                             padding: 10,
                             borderRadius: 10,
-                            border: '1px solid rgba(63,63,70,0.7)',
-                            background: 'rgba(24,24,27,0.5)'
+                            border: '1px solid rgba(24, 24, 27, 0.14)',
+                            background: 'rgba(95, 2, 107, 0.05)'
                           }}
                         >
-                          <Typography.Text style={{ color: 'rgba(244,244,245,0.9)' }}>{c.from.nodeName}</Typography.Text>
-                          <Typography.Text style={{ color: 'rgba(244,244,245,0.55)' }}> → </Typography.Text>
-                          <Typography.Text style={{ color: 'rgba(244,244,245,0.9)' }}>{c.to.nodeName}</Typography.Text>
+                          <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.9)' }}>{c.from.nodeName}</Typography.Text>
+                          <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.55)' }}> → </Typography.Text>
+                          <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.9)' }}>{c.to.nodeName}</Typography.Text>
                         </div>
                       ))}
                     </Space>
@@ -161,13 +161,13 @@ export function WorkflowInspector(props: {
 
         {view === 'node' ? (
           !selectedNode ? (
-            <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>选择画布中的节点以编辑输入/输出/参数。</Typography.Text>
+            <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.72)' }}>选择画布中的节点以编辑输入/输出/参数。</Typography.Text>
           ) : (
             <Form layout="vertical">
               <Form.Item label="函数">
-                <Typography.Text style={{ color: 'rgba(244,244,245,0.85)' }}>{selectedNode.display_name}</Typography.Text>
+                <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.88)' }}>{selectedNode.display_name}</Typography.Text>
                 <br />
-                <Typography.Text style={{ color: 'rgba(244,244,245,0.55)' }}>{selectedNode.file_path}</Typography.Text>
+                <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.6)' }}>{selectedNode.file_path}</Typography.Text>
               </Form.Item>
               <Form.Item label="Inputs (JSON)">
                 <Input.TextArea
@@ -190,7 +190,7 @@ export function WorkflowInspector(props: {
                   autoSize={{ minRows: 4 }}
                 />
               </Form.Item>
-              <Divider style={{ borderColor: 'rgba(63,63,70,0.6)' }} />
+              <Divider style={{ borderColor: 'rgba(24, 24, 27, 0.12)' }} />
               <Form.Item label="测试工作目录 (cwd)">
                 <Input value={selectedNode.testCwd} onChange={(e) => onUpdateNode(selectedNode.id, { testCwd: e.target.value })} />
               </Form.Item>
@@ -211,62 +211,62 @@ export function WorkflowInspector(props: {
 
         {view === 'edge' ? (
           !edgeDetail ? (
-            <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>选择画布中的连线以查看输入/输出。</Typography.Text>
+            <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.72)' }}>选择画布中的连线以查看输入/输出。</Typography.Text>
           ) : (
             <div>
-              <Typography.Text style={{ color: 'rgba(244,244,245,0.85)' }}>起点</Typography.Text>
+              <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.88)' }}>起点</Typography.Text>
               <br />
-              <Typography.Text style={{ color: 'rgba(244,244,245,0.6)' }}>{edgeDetail.from.display_name}</Typography.Text>
-              <Divider style={{ borderColor: 'rgba(63,63,70,0.6)' }} />
-              <Typography.Text style={{ color: 'rgba(244,244,245,0.85)' }}>终点</Typography.Text>
+              <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.62)' }}>{edgeDetail.from.display_name}</Typography.Text>
+              <Divider style={{ borderColor: 'rgba(24, 24, 27, 0.12)' }} />
+              <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.88)' }}>终点</Typography.Text>
               <br />
-              <Typography.Text style={{ color: 'rgba(244,244,245,0.6)' }}>{edgeDetail.to.display_name}</Typography.Text>
-              <Divider style={{ borderColor: 'rgba(63,63,70,0.6)' }} />
+              <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.62)' }}>{edgeDetail.to.display_name}</Typography.Text>
+              <Divider style={{ borderColor: 'rgba(24, 24, 27, 0.12)' }} />
 
               <Space direction="vertical" style={{ width: '100%' }} size={10}>
                 <div>
-                  <Typography.Text style={{ color: 'rgba(244,244,245,0.85)' }}>起点 Outputs (JSON)</Typography.Text>
+                  <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.88)' }}>起点 Outputs (JSON)</Typography.Text>
                   <div style={{ marginTop: 6 }}>
                     <Input.TextArea value={edgeDetail.from.outputsJson} readOnly autoSize={{ minRows: 3, maxRows: 10 }} />
                   </div>
                 </div>
 
                 <div>
-                  <Typography.Text style={{ color: 'rgba(244,244,245,0.85)' }}>终点 Inputs (JSON)</Typography.Text>
+                  <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.88)' }}>终点 Inputs (JSON)</Typography.Text>
                   <div style={{ marginTop: 6 }}>
                     <Input.TextArea value={edgeDetail.to.inputsJson} readOnly autoSize={{ minRows: 3, maxRows: 10 }} />
                   </div>
                 </div>
 
                 <div>
-                  <Typography.Text style={{ color: 'rgba(244,244,245,0.85)' }}>合并输入/输出键</Typography.Text>
-                  <div style={{ marginTop: 6, padding: 10, borderRadius: 10, border: '1px solid rgba(63,63,70,0.7)', background: 'rgba(24,24,27,0.5)' }}>
-                    <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>
+                  <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.88)' }}>合并输入/输出键</Typography.Text>
+                  <div style={{ marginTop: 6, padding: 10, borderRadius: 10, border: '1px solid rgba(24, 24, 27, 0.14)', background: 'rgba(95, 2, 107, 0.05)' }}>
+                    <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.72)' }}>
                       {edgeDetail.combined.length ? edgeDetail.combined.join(', ') : '(无可解析键)'}
                     </Typography.Text>
                   </div>
                 </div>
 
                 <div>
-                  <Typography.Text style={{ color: 'rgba(244,244,245,0.85)' }}>起点输出键</Typography.Text>
-                  <div style={{ marginTop: 6, padding: 10, borderRadius: 10, border: '1px solid rgba(63,63,70,0.7)', background: 'rgba(24,24,27,0.5)' }}>
-                    <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>
+                  <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.88)' }}>起点输出键</Typography.Text>
+                  <div style={{ marginTop: 6, padding: 10, borderRadius: 10, border: '1px solid rgba(24, 24, 27, 0.14)', background: 'rgba(95, 2, 107, 0.05)' }}>
+                    <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.72)' }}>
                       {edgeDetail.fromOut.length ? edgeDetail.fromOut.join(', ') : '(无可解析键)'}
                     </Typography.Text>
                   </div>
                 </div>
 
                 <div>
-                  <Typography.Text style={{ color: 'rgba(244,244,245,0.85)' }}>终点输入键</Typography.Text>
-                  <div style={{ marginTop: 6, padding: 10, borderRadius: 10, border: '1px solid rgba(63,63,70,0.7)', background: 'rgba(24,24,27,0.5)' }}>
-                    <Typography.Text style={{ color: 'rgba(244,244,245,0.72)' }}>
+                  <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.88)' }}>终点输入键</Typography.Text>
+                  <div style={{ marginTop: 6, padding: 10, borderRadius: 10, border: '1px solid rgba(24, 24, 27, 0.14)', background: 'rgba(95, 2, 107, 0.05)' }}>
+                    <Typography.Text style={{ color: 'rgba(24, 24, 27, 0.72)' }}>
                       {edgeDetail.toIn.length ? edgeDetail.toIn.join(', ') : '(无可解析键)'}
                     </Typography.Text>
                   </div>
                 </div>
               </Space>
 
-              <Divider style={{ borderColor: 'rgba(63,63,70,0.6)' }} />
+              <Divider style={{ borderColor: 'rgba(24, 24, 27, 0.12)' }} />
               <Button danger onClick={() => onRemoveEdge(selectedEdgeId as string)}>
                 删除连线
               </Button>

@@ -168,3 +168,11 @@ def list_events(limit: int = 50):
             pass
         out.append(ArchiveEventOut(**ev))
     return out
+
+
+@router.get("/events/{event_id}", response_model=ArchiveEventOut)
+def get_event(event_id: str):
+    ev = archive_service.get_event(event_id)
+    if not ev:
+        return ArchiveEventOut(id=str(event_id), type='missing', payload={'error': 'not_found'}, ts='')
+    return ArchiveEventOut(**ev)

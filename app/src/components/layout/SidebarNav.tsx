@@ -9,15 +9,13 @@ type NavItem = {
 }
 
 const offline: NavItem[] = [
-  { to: '/offline/rag', label: 'RAG 管理' },
+  { to: '/offline/rag', label: '代码管理' },
   { to: '/offline/archive', label: '档案管理' },
   { to: '/offline/sft', label: '大模型管理' }
 ]
 
 const online: NavItem[] = [
-  { to: '/online/graph-builder', label: '图形化搭建' },
-  { to: '/task-builder', label: '模块化搭建' },
-  { to: '/online/task', label: '任务输入' },
+  { to: '/online/task', label: '结构化输入' },
   { to: '/visual-builder', label: '图形化输入' },
   { to: '/online/routing', label: '路由消歧' },
   { to: '/online/orchestration', label: '函数编排与生成' },

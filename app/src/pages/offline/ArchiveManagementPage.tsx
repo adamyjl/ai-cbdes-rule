@@ -331,11 +331,11 @@ export function ArchiveManagementPage() {
           }
           size="small"
           bordered={false}
-          style={{ background: 'rgba(9, 9, 11, 0.6)' }}
+          style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}
         >
           <Table
             size="small"
-            className="dark-table"
+            className="light-table"
             rowKey="id"
             columns={columns as any}
             dataSource={events}
