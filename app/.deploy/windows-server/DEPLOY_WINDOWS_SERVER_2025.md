@@ -106,6 +106,7 @@ powershell -ExecutionPolicy Bypass -File .\.deploy\windows-server\deploy.ps1 -Da
 脚本会：
 - 创建 Python venv 并安装后端依赖
 - 安装 Node 依赖、构建前端（生成 `dist/`）
+- 构建 GAASD 子应用（生成 `autostudio-ide/dist/`，用于 `/gaasd/`）
 - 启动/注册三个服务（Caddy 反代、FastAPI、Express）
 
 ---
@@ -131,4 +132,3 @@ powershell -ExecutionPolicy Bypass -File .\.deploy\windows-server\deploy.ps1 -Da
 2) 门禁编译报错找不到 cl
 - 确认安装了 Visual Studio Build Tools（含 C++ workload）。
 - 脚本会尝试自动调用 `vswhere + VsDevCmd` 注入环境，但前提是 `vswhere.exe` 存在。
-

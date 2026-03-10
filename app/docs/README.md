@@ -104,3 +104,20 @@ graph TD
 同时补充一份“以当前可运行实现为准”的系统设计说明（包含页面交互与实际持久化数据形态）：
 
 - 系统设计说明：[SYSTEM_DESIGN.md](SYSTEM_DESIGN.md)
+
+---
+
+## 页面说明（Rule / MLLM / GAASD）
+
+- Rule 主站（/offline/* + /online/*）：[RULE_WEB.md](RULE_WEB.md)
+- MLLM 控制台（/mllm）：[MLLM_WEB.md](MLLM_WEB.md)
+- GAASD 子应用（/gaasd/）：[GAASD.md](GAASD.md)
+
+## 业务流程与接口
+
+- 用户业务流程（端到端）：[USER_FLOWS.md](USER_FLOWS.md)
+- 后端接口参考（FastAPI/Express）：[API_REFERENCE.md](API_REFERENCE.md)
+
+## 部署与运维
+
+- 部署与运维说明：[DEPLOYMENT.md](DEPLOYMENT.md)

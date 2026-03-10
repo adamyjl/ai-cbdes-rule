@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
+import { useEffect, useState } from 'react'
 import { AppShell } from './components/layout/AppShell'
 import { RagManagementPage } from './pages/offline/RagManagementPage'
 import { ArchiveManagementPage } from './pages/offline/ArchiveManagementPage'
@@ -12,14 +13,35 @@ import { FunctionOrchestrationPage } from './pages/online/FunctionOrchestrationP
 import { TestGatePage } from './pages/online/TestGatePage'
 import { ReleasePage } from './pages/online/ReleasePage'
 import { MllmConsolePage } from './pages/mllm/MllmConsolePage'
+import { LandingPage } from './pages/LandingPage'
 
 const SHOW_EXPERIMENTAL_BUILDERS = false
+
+function ExternalPathRedirect(props: { target: string; storageKey: string }) {
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    try {
+      const attemptedAt = Number(sessionStorage.getItem(props.storageKey) || '0')
+      if (attemptedAt && Date.now() - attemptedAt < 3000) {
+        setFailed(true)
+        return
+      }
+      sessionStorage.setItem(props.storageKey, String(Date.now()))
+    } catch {
+      setFailed(false)
+    }
+    window.location.replace(props.target)
+  }, [props.storageKey, props.target])
+
+  if (failed) return <Navigate to="/" replace />
+  return null
+}
 
 export default function App() {
   return (
     <AppShell>
       <Routes>
-        <Route path="/" element={<Navigate to="/offline/rag" replace />} />
+        <Route path="/" element={<LandingPage />} />
 
         <Route path="/offline/rag" element={<RagManagementPage />} />
         <Route path="/offline/archive" element={<ArchiveManagementPage />} />
@@ -39,8 +61,10 @@ export default function App() {
         <Route path="/visual-builder" element={<VisualBuilderPage />} />
 
         <Route path="/mllm" element={<MllmConsolePage />} />
+        <Route path="/gaasd" element={<ExternalPathRedirect target="/gaasd/" storageKey="redirect:gaasd" />} />
+        <Route path="/gaasd/*" element={<ExternalPathRedirect target="/gaasd/" storageKey="redirect:gaasd" />} />
 
-        <Route path="*" element={<Navigate to="/offline/rag" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AppShell>
   )

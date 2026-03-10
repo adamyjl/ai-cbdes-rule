@@ -65,6 +65,33 @@
 
 说明：仓库中的 `AI-CBDES-MLLM-Web/` 作为“独立工程形态”的参考源保留，用于对照其模块划分与 UI 结构；当前部署路径以主工程 `/mllm` 路由为准。
 
+---
+
+## 6. 后台对接现状与规划（以当前实现为准）
+
+### 6.1 当前已对接能力
+
+MLLM 页面当前仅做“控制台 UI 原型”，已对接的后端能力只有：
+
+- `GET /api/health`：用于在顶栏展示 API 状态（ok/fail/unknown）。
+
+对应实现：`app/src/pages/mllm/original/MllmOriginalApp.tsx`。
+
+### 6.2 推荐的后端对接路径
+
+后续若要把 MLLM 控制台变为可用的“研发工作台”，建议复用 Rule 主站的后端能力（同域前缀保持一致）：
+
+- `/py/*`（FastAPI）：RAG（上传/索引/检索）、任务分析、消歧、编排生成、门禁、发布、档案。
+- `/api/*`（Express）：可扩展为轻量网关/鉴权/回调占位（当前仅 health）。
+
+建议映射：
+
+- Prompt Studio → `/py/cot/*` + `/py/orchestrator/*`
+- Evaluation Gate → `/py/gate/*` + `/py/archive/*`
+- Data Factory → `/py/rag/upload`、`/py/rag/scan`、`/py/rag/index-job`
+
+更完整接口清单见：`app/docs/API_REFERENCE.md`。
+
 ## 5. 开发方式（本地调试）
 
 在 `AI-CBDES-MLLM-Web/` 目录下：

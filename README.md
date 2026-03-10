@@ -57,7 +57,10 @@ https://www.ai-cbdes-rule.com/online/task
 ### 访问路径
 
 - 部署态（Caddy 对外提供）
-  - `/`：前端静态站点（`app/dist`）
+  - `/`：平台首页（Landing，介绍并跳转到 Rule/MLLM/GAASD）
+  - `/offline/*`：Rule（RAG/档案/SFT 等主站页面）
+  - `/mllm`：MLLM 工作台（投屏友好浅色主题）
+  - `/gaasd/`：GAASD 子应用（`autostudio-ide/dist`，子路径静态站点 + SPA fallback）
   - `/py/*`：反代 FastAPI
   - `/api/*`：反代 Express
 - 开发态（Vite 代理）
@@ -77,6 +80,8 @@ https://www.ai-cbdes-rule.com/online/task
 │  ├─ .runtime/               部署态运行文件（Caddyfile、二进制、启动脚本）
 │  ├─ scripts/                本地一键启动与自测脚本
 │  └─ dist/                   前端构建产物（部署态使用）
+├─ autostudio-ide/             GAASD 子应用（独立前端工程，部署到 /gaasd/）
+│  └─ dist/                    GAASD 构建产物
 └─ data/                      运行时数据与样例工作区（生产建议外置）
    ├─ archive.jsonl           档案事件流
    └─ gate-workspaces/        门禁工作区（示例/自测）

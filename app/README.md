@@ -16,6 +16,10 @@
   - 统一对外提供站点（静态 `dist`）
   - 反代 `/py/*` → FastAPI，`/api/*` → Express
   - 生产域名默认启用 HTTPS（Let's Encrypt）
+- GAASD 子应用（独立前端工程）
+  - 目录：仓库根目录 `autostudio-ide/`
+  - 部署路径：`/gaasd/`（Caddy `handle_path /gaasd/*` 指向 `autostudio-ide/dist`）
+  - 兼容：`/gaasd` 会 308 跳转到 `/gaasd/`
 
 更多说明：
 - 项目说明与整体流程：[docs/README.md](docs/README.md)
@@ -113,6 +117,7 @@ powershell -ExecutionPolicy Bypass -File .\.deploy\windows-server\deploy.ps1 `
 - Windows 服务：`ai-cbdes-fastapi` / `ai-cbdes-express` / `ai-cbdes-caddy`
 - Caddy 配置：`app\.runtime\Caddyfile`
 - 前端产物：`app\dist\`
+- GAASD 产物：`autostudio-ide\dist\`（由 Caddy 以子路径 `/gaasd/` 发布）
 
 域名与 HTTPS：
 - 推荐访问：`https://www.ai-cbdes-rule.com`
@@ -133,9 +138,16 @@ powershell -ExecutionPolicy Bypass -File .\.deploy\windows-server\deploy.ps1 `
 ## 关键入口速查
 
 - 前端路由：[src/App.tsx](src/App.tsx)
+- 平台首页（Landing）：[LandingPage.tsx](src/pages/LandingPage.tsx)
 - FastAPI 入口与路由挂载：[backend/app/main.py](backend/app/main.py)
 - FastAPI Schema（请求/响应结构）：[backend/app/schemas.py](backend/app/schemas.py)
 - API 客户端（前端调用 `/py/*`、`/api/*`）：[src/utils/api.ts](src/utils/api.ts)
+
+## 常见问题（部署态）
+
+- 现象：访问 `https://<域名>/` 或 `https://<域名>/gaasd/` 浏览器报 `Failed to fetch` / “无法访问此网站”
+  - 优先检查 `app\.runtime\Caddyfile` 是否被错误覆盖成仅监听 `:80` 或包含 `auto_https off`
+  - 推荐使用 `app\.deploy\windows-server\deploy.ps1` 生成/更新 Caddyfile，并确认安全组放行 `80` 与 `443`
 
 ## 目录结构速查
 

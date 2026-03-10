@@ -1,0 +1,16 @@
+{
+  "written_files": [
+    {
+      "path": "common/funTriangle.h",
+      "bytes": 890
+    },
+    {
+      "path": "common/funTriangle.cpp",
+      "bytes": 5557
+    },
+    {
+      "path": "main.cpp",
+      "bytes": 2089
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "name": "AutoStudio IDE",
+  "description": "A web-based IDE interface for automotive software development with a purple theme and resizable panels.",
+  "requestFramePermissions": []
+}

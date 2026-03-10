@@ -183,6 +183,19 @@ function Ensure-FrontendBuild($dir) {
   }
 }
 
+function Ensure-GaasdBuild($appDir, $npmRegistry, $npmVerbose) {
+  $repoRoot = Split-Path -Parent $appDir
+  $gaasdDir = Join-Path $repoRoot 'autostudio-ide'
+  if (!(Test-Path $gaasdDir)) {
+    Write-Info "skip gaasd build (missing): $gaasdDir"
+    return
+  }
+  Write-Info "npm ci (gaasd): $gaasdDir"
+  Ensure-NpmInstall $gaasdDir $npmRegistry $npmVerbose
+  Write-Info "build gaasd"
+  Ensure-FrontendBuild $gaasdDir
+}
+
 function Write-Caddyfile($path, $siteRoot, $fastApiPort, $expressPort, $httpPort, $publicHost) {
   $publicHostName = ($publicHost -replace '^https?://', '').TrimEnd('/')
   if (!$publicHostName) {
@@ -206,6 +219,18 @@ function Write-Caddyfile($path, $siteRoot, $fastApiPort, $expressPort, $httpPort
 }
 
 (ai_cbdes_app) {
+  @gaasd_exact path /gaasd
+  redir @gaasd_exact /gaasd/ 308
+
+  handle_path /gaasd/* {
+    root * C:\srv\ai-cbdes-rule\autostudio-ide\dist
+    @gaasd_index path / /index.html
+    try_files {path} /index.html
+    header @gaasd_index Cache-Control "no-store"
+    header /assets/* Cache-Control "public, max-age=31536000, immutable"
+    file_server
+  }
+
   handle_path /py/* {
     reverse_proxy 127.0.0.1:$fastApiPort
   }
@@ -351,6 +376,7 @@ Write-Info 'install python deps'
 
 Ensure-NpmInstall $AppDir $NpmRegistry $NpmVerbose
 Ensure-FrontendBuild $AppDir
+Ensure-GaasdBuild $AppDir $NpmRegistry $NpmVerbose
 
 $deployDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $runtimeDir = Join-Path $AppDir '.runtime'

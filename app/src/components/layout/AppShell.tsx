@@ -9,6 +9,7 @@ export function AppShell(props: { children: ReactNode }) {
   const bootstrapArchives = useArchiveStore((s) => s.bootstrap)
   const location = useLocation()
   const isMllm = location.pathname === '/mllm' || location.pathname.startsWith('/mllm/')
+  const isLanding = location.pathname === '/'
 
   useEffect(() => {
     bootstrapArchives()
@@ -31,7 +32,7 @@ export function AppShell(props: { children: ReactNode }) {
     <ConfigProvider theme={antdTheme}>
       <Layout style={{ minHeight: '100dvh' }}>
         <Layout>
-          {!isMllm && (
+          {!isMllm && !isLanding && (
             <Layout.Header style={{ padding: 0, height: 'auto', background: 'rgb(95, 2, 107)' }}>
               <TopBar />
             </Layout.Header>
