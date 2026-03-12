@@ -7,9 +7,9 @@ import TopBar from './components/Layout/TopBar';
 import Toolbar from './components/Layout/Toolbar';
 import Workspace, { PipelineStep } from './components/Layout/Workspace';
 import CodeManagementPanel from './components/Layout/CodeManagementPanel';
+import ReuseModulePanel from './components/Layout/ReuseModulePanel';
 import { useEffect, useState } from 'react';
 import {
-  cotQuestion,
   gateGetJob,
   gateStart,
   healthPython,
@@ -34,6 +34,18 @@ type ProjectMeta = {
 
 const PROJECTS_KEY = 'gaasd:projects:v1';
 const CURRENT_PROJECT_KEY = 'gaasd:projects:current:v1';
+const GENERATED_FUNCTIONS_KEY_PREFIX = 'gaasd:generated-functions:v1:';
+const GENERATED_MODULES_KEY_PREFIX = 'gaasd:generated-modules:v1:';
+
+function loadJsonFromStorage<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
 
 function loadProjects() {
   try {
@@ -52,6 +64,115 @@ function loadProjects() {
   } catch {
     return [] as ProjectMeta[];
   }
+}
+
+function extractCnNameFromDoc(docZh: string) {
+  const t = String(docZh || '');
+  const m = t.match(/@cn_name\s+([^\n\r]+)/);
+  if (m && m[1]) return String(m[1]).trim();
+  const m2 = t.match(/\*\s*@cn_name\s+([^\n\r]+)/);
+  if (m2 && m2[1]) return String(m2[1]).trim();
+  const first = t
+    .split(/\r?\n/)
+    .map((x) => x.trim().replace(/^\*+\s*/, '').trim())
+    .filter(Boolean)[0];
+  return first || '';
+}
+
+function deriveDisplayNameFromPrompt(p: string) {
+  const s = String(p || '').trim();
+  if (!s) return '';
+  let x = s;
+  x = x.replace(/[，。；、,.]/g, ' ');
+  x = x.replace(/请|根据|当前|工程|内容|生成|实现|一个|用于|函数|模块/g, ' ');
+  x = x.replace(/\s+/g, ' ').trim();
+  x = x.replace(/^[的\s]+/g, '').replace(/[的\s]+$/g, '').trim();
+  if (!x) return s.slice(0, 12);
+  return x.slice(0, 12);
+}
+
+function sanitizeCnDisplayName(v: string) {
+  let s = String(v || '').trim();
+  s = s.replace(/[“”"'《》【】\[\]（）()]/g, '');
+  s = s.replace(/\s+/g, ' ').trim();
+  s = s.replace(/^[的\s]+/g, '').replace(/[的\s]+$/g, '').trim();
+  return s;
+}
+
+function extractCnNameFromCode(code: string) {
+  const s = String(code || '');
+  const m = s.match(/@cn_name\s+([^\n\r]+)/);
+  if (m && m[1]) return String(m[1]).trim();
+  const m2 = s.match(/\*\s*@cn_name\s+([^\n\r]+)/);
+  if (m2 && m2[1]) return String(m2[1]).trim();
+  return '';
+}
+
+function parseFunctionBlocksFromCode(raw: string) {
+  const s = String(raw || '').replace(/\r\n/g, '\n');
+  const re = /\/\*\*[\s\S]*?\*\/\s*(?:static\s+)?[^\n;{}]+\([^;{}]*\)\s*\{/g;
+  const blocks: Array<{ start: number; end: number; text: string; name: string; cn_name: string; signature: string }> = [];
+  let m: RegExpExecArray | null = null;
+  while ((m = re.exec(s))) {
+    const start = m.index;
+    const braceStart = s.indexOf('{', start);
+    if (braceStart < 0) continue;
+    let depth = 0;
+    let i = braceStart;
+    for (; i < s.length; i += 1) {
+      const ch = s[i];
+      if (ch === '{') depth += 1;
+      else if (ch === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          i += 1;
+          break;
+        }
+      }
+    }
+    const end = Math.min(i, s.length);
+    const text = s.slice(start, end).trim();
+    const comment = (text.match(/\/\*\*[\s\S]*?\*\//) || [''])[0];
+    const cn = sanitizeCnDisplayName(extractCnNameFromDoc(comment) || extractCnNameFromCode(comment) || '');
+    const afterComment = text.replace(/^[\s\S]*?\*\/\s*/, '');
+    const sigPart = afterComment.split('{')[0] || '';
+    const signature = sigPart.replace(/\s+/g, ' ').trim();
+    const nm = (signature.match(/\b([a-zA-Z][a-zA-Z0-9]*)\s*\(/) || [])[1] || '';
+    blocks.push({ start, end, text, name: nm, cn_name: cn, signature, });
+  }
+  if (!blocks.length) return { preamble: s.trim(), blocks: [] as typeof blocks };
+  const preamble = s.slice(0, blocks[0].start).trim();
+  return { preamble, blocks };
+}
+
+function validateGeneratedFunctionCode(code: string) {
+  const s = String(code || '').trim();
+  if (!s) return { ok: false, reason: 'empty_code' };
+  const low = s.toLowerCase();
+  if (/(^|\n)\s*int\s+main\s*\(/i.test(s) || /(^|\n)\s*void\s+main\s*\(/i.test(s)) return { ok: false, reason: 'contains_main' };
+  if (/\btemplate\b/i.test(s) || /\bclass\b/i.test(s)) return { ok: false, reason: 'uses_class_or_template' };
+  if (/\bgoto\b/i.test(s)) return { ok: false, reason: 'uses_goto' };
+  if (!/@brief\b/i.test(s) || !/@cn_name\b/i.test(s) || !/@en_name\b/i.test(s)) return { ok: false, reason: 'missing_doxygen_fields' };
+  const fns = Array.from(s.matchAll(/\b([a-zA-Z][a-zA-Z0-9]*)\s*\(/g)).map((m) => String(m[1] || ''));
+  for (const name of fns) {
+    if (name && /[_\.]/.test(name)) return { ok: false, reason: 'invalid_function_name' };
+  }
+  if (low.includes('hello, world')) return { ok: false, reason: 'hello_world_placeholder' };
+  return { ok: true, reason: '' };
+}
+
+function loadGeneratedFunctions(projectId: string) {
+  return loadJsonFromStorage<Record<string, { display_name: string; signature: string; module: string; doc_zh: string; doc_en?: string; code: string }>>(
+    `${GENERATED_FUNCTIONS_KEY_PREFIX}${projectId}`,
+    {}
+  );
+}
+
+function loadGeneratedModules(projectId: string) {
+  return loadJsonFromStorage<Record<string, { module_key: string; display_name: string; doc_zh: string; nodes: any[]; edges: any[] }>>(
+    `${GENERATED_MODULES_KEY_PREFIX}${projectId}`,
+    {}
+  );
 }
 
 export default function App() {
@@ -84,6 +205,9 @@ export default function App() {
   const [aiEditFailSignal, setAiEditFailSignal] = useState(0);
   const [aiEditSummary, setAiEditSummary] = useState('');
   const [scanManagerOpen, setScanManagerOpen] = useState(false);
+  const [reuseManagerOpen, setReuseManagerOpen] = useState(false);
+  const [injectReusePayload, setInjectReusePayload] = useState<{ functions: any[]; modules: any[] } | null>(null);
+  const [injectReuseSignal, setInjectReuseSignal] = useState(0);
   const [saveCanvasSignal, setSaveCanvasSignal] = useState(0);
   const [taskTargetModule, setTaskTargetModule] = useState('');
   const [taskIntent, setTaskIntent] = useState('');
@@ -97,13 +221,49 @@ export default function App() {
   const [qaAmbiguity, setQaAmbiguity] = useState('');
   const [qaMissing, setQaMissing] = useState('');
   const [qaBusy, setQaBusy] = useState(false);
+  const [generationMode, setGenerationMode] = useState<'canvas' | 'analyze' | 'new_function' | 'new_module' | 'reuse'>('canvas');
+  const [qaAutoOpenSignal, setQaAutoOpenSignal] = useState(0);
+  const [qaCanvasCodeContext, setQaCanvasCodeContext] = useState('');
+  const [generatedFunctions, setGeneratedFunctions] = useState<Record<string, { display_name: string; signature: string; module: string; doc_zh: string; doc_en?: string; code: string }>>(
+    {}
+  );
+  const [generatedModules, setGeneratedModules] = useState<Record<string, { module_key: string; display_name: string; doc_zh: string; nodes: any[]; edges: any[] }>>(
+    {}
+  );
+
+  useEffect(() => {
+    if (!projectId) return;
+    setGeneratedFunctions(loadGeneratedFunctions(projectId));
+    setGeneratedModules(loadGeneratedModules(projectId));
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    try {
+      localStorage.setItem(`${GENERATED_FUNCTIONS_KEY_PREFIX}${projectId}`, JSON.stringify(generatedFunctions || {}));
+    } catch {
+    }
+  }, [projectId, generatedFunctions]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    try {
+      localStorage.setItem(`${GENERATED_MODULES_KEY_PREFIX}${projectId}`, JSON.stringify(generatedModules || {}));
+    } catch {
+    }
+  }, [projectId, generatedModules]);
+  const [injectFunctionPayload, setInjectFunctionPayload] = useState<{ functionId: string; displayName: string; signature?: string; module?: string } | null>(null);
+  const [injectFunctionSignal, setInjectFunctionSignal] = useState(0);
   const [terminalLines, setTerminalLines] = useState<string[]>([]);
   const [terminalBusy, setTerminalBusy] = useState(false);
-  const [graphSnapshot, setGraphSnapshot] = useState<{ nodes: any[]; edges: any[]; activeCanvasId: string }>({
+  const [graphSnapshot, setGraphSnapshot] = useState<{ canvases: any[]; nodes: any[]; edges: any[]; activeCanvasId: string }>(() => ({
+    canvases: [],
     nodes: [],
     edges: [],
     activeCanvasId: '1'
-  });
+  }));
+  const [importGraphPayload, setImportGraphPayload] = useState<any | null>(null);
+  const [importGraphSignal, setImportGraphSignal] = useState(0);
 
   const [pipelineSteps, setPipelineSteps] = useState<PipelineStep[]>([
     { id: 'compile', label: '编译检测', status: 'pending' },
@@ -137,6 +297,65 @@ export default function App() {
     appendLog('画布已保存');
   };
 
+  const doExportCanvasFile = async () => {
+    doSaveProject();
+    const userName = (window.prompt('请输入工程文件用户名（用于命名）', projectName) || '').trim();
+    if (!userName) return;
+
+    const activeCanvasId = String(graphSnapshot.activeCanvasId || '1');
+    const canvasMeta = (Array.isArray(graphSnapshot.canvases) ? graphSnapshot.canvases : []).find((c: any) => String(c?.id || '') === activeCanvasId);
+    const canvasName = String(canvasMeta?.name || 'canvas').trim() || 'canvas';
+    const nodes = (Array.isArray(graphSnapshot.nodes) ? graphSnapshot.nodes : []).filter((n: any) => String(n?.canvasId || '') === activeCanvasId);
+    const edges = (Array.isArray(graphSnapshot.edges) ? graphSnapshot.edges : []).filter((e: any) => String(e?.canvasId || '') === activeCanvasId);
+
+    const data = {
+      version: 1,
+      meta: {
+        userName,
+        projectId,
+        projectName,
+        savedAt: new Date().toISOString()
+      },
+      rootDir,
+      canvas: {
+        id: activeCanvasId,
+        name: canvasName,
+        nodes,
+        edges
+      }
+    };
+
+    const text = JSON.stringify(data, null, 2);
+    const safeBase = `${userName}_${canvasName}`.replace(/[\\/:*?"<>|]+/g, '_');
+    const suggestedName = `${safeBase}.json`;
+
+    const picker = (window as any).showSaveFilePicker as undefined | ((opts: any) => Promise<any>);
+    try {
+      if (picker) {
+        const handle = await picker({
+          suggestedName,
+          types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }]
+        });
+        const writable = await handle.createWritable();
+        await writable.write(text);
+        await writable.close();
+        appendLog(`工程文件已导出：${suggestedName}`);
+        return;
+      }
+    } catch (e) {
+      appendLog(`保存对话框失败，改用下载：${e instanceof Error ? e.message : 'unknown'}`);
+    }
+
+    const blob = new Blob([text], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = suggestedName;
+    a.click();
+    URL.revokeObjectURL(url);
+    appendLog(`工程文件已下载：${suggestedName}`);
+  };
+
   const doNewProject = () => {
     const name = (window.prompt('请输入新工程名称', `工程_${new Date().toLocaleDateString()}`) || '').trim();
     if (!name) return;
@@ -163,33 +382,50 @@ export default function App() {
   };
 
   const doOpenProject = () => {
-    const sorted = [...projects].sort((a, b) => b.updatedAt - a.updatedAt);
-    if (!sorted.length) {
-      appendLog('暂无可打开工程，请先新建工程');
-      return;
-    }
-    const tips = sorted.slice(0, 12).map((p, i) => `${i + 1}. ${p.name}`).join('\n');
-    const input = (window.prompt(`请选择要打开的工程（输入序号）:\n${tips}`, '1') || '').trim();
-    if (!input) return;
-    const index = Number(input);
-    if (!Number.isFinite(index) || index < 1 || index > sorted.length) {
-      appendLog('打开工程失败：输入无效');
-      return;
-    }
-    const hit = sorted[index - 1];
-    setProjectId(hit.id);
-    setProjectName(hit.name);
-    setRootDir(hit.rootDir || 'data\\THICV-Pilot_master');
-    setPrompt(hit.prompt || '请根据当前需求生成可编译的 C++ 代码，并给出关键实现要点。');
-    setGeneratedCode('');
-    setLogs([]);
-    setPipelineSteps([
-      { id: 'compile', label: '编译检测', status: 'pending' },
-      { id: 'static', label: '静态检测', status: 'pending' },
-      { id: 'unit', label: '单元检测', status: 'pending' },
-      { id: 'coverage', label: '覆盖度检测', status: 'pending' }
-    ]);
-    localStorage.setItem(CURRENT_PROJECT_KEY, hit.id);
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json';
+    input.onchange = async () => {
+      const f = input.files?.[0];
+      if (!f) return;
+      let raw = '';
+      try {
+        raw = await f.text();
+      } catch (e) {
+        appendLog(`读取文件失败：${e instanceof Error ? e.message : 'unknown'}`);
+        return;
+      }
+      let data: any;
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        appendLog('导入失败：JSON 解析错误');
+        alert('导入失败：JSON 解析错误');
+        return;
+      }
+
+      const version = Number(data?.version || 0);
+      const canvas = data?.canvas;
+      const nodes = canvas?.nodes;
+      const edges = canvas?.edges;
+      if (version !== 1 || !canvas || !Array.isArray(nodes) || !Array.isArray(edges)) {
+        appendLog('导入失败：工程文件格式不正确（version/canvas/nodes/edges）');
+        alert('导入失败：工程文件格式不正确（version/canvas/nodes/edges）');
+        return;
+      }
+
+      const canvasId = String(canvas?.id || `import_${Date.now()}`);
+      const canvasName = String(canvas?.name || '导入画布');
+      const fixedNodes = nodes.map((n: any) => ({ ...n, canvasId }));
+      const fixedEdges = edges.map((e: any) => ({ ...e, canvasId }));
+      setImportGraphPayload({ canvases: [{ id: canvasId, name: canvasName }], activeCanvasId: canvasId, nodes: fixedNodes, edges: fixedEdges });
+      setImportGraphSignal((v) => v + 1);
+
+      const importedRoot = String(data?.rootDir || '').trim();
+      if (importedRoot) setRootDir(importedRoot);
+      appendLog(`工程文件已导入：${f.name}`);
+    };
+    input.click();
   };
 
   const runHealthCheck = async () => {
@@ -220,7 +456,579 @@ export default function App() {
   };
 
   const runGenerate = async () => {
-    if (!prompt.trim()) {
+    void runGenerateByMode();
+  };
+
+  const extractFirstCppBlock = (text: string) => {
+    const s = String(text || '');
+    const m = s.match(/```(?:cpp|c\+\+|c)?\s*\n([\s\S]*?)\n```/i);
+    if (m && m[1]) return String(m[1]).trim();
+    return s.trim();
+  };
+
+  const buildCanvasCodeContext = async () => {
+    const fnIds: string[] = Array.from(
+      new Set<string>(
+        graphSnapshot.nodes
+          .filter((n: any) => n.kind === 'function' && n.functionId && !String(n.functionId).startsWith('glue:'))
+          .map((n: any) => String(n.functionId))
+      )
+    );
+    if (!fnIds.length) return '';
+    const details = await Promise.all(
+      fnIds.map((id) => {
+        if (generatedFunctions[id]) return Promise.resolve({ function: generatedFunctions[id] } as any);
+        return ragGetFunction(id).catch(() => null);
+      })
+    );
+    const blocks = details
+      .map((d: any, i) => {
+        const id = fnIds[i];
+        const local = generatedFunctions[id];
+        const fn = d?.function || d || local;
+        const name = String(fn?.display_name || fn?.name || id);
+        const file = String((fn as any)?.file_path || '');
+        const sig = String(fn?.signature || '');
+        const code = String(fn?.code || '');
+        const head = `===== ${name} (${id}) =====`;
+        const meta = [file ? `file_path: ${file}` : '', sig ? `signature: ${sig}` : ''].filter(Boolean).join('\n');
+        return [head, meta, code].filter(Boolean).join('\n');
+      })
+      .join('\n\n');
+    return blocks;
+  };
+
+  const buildDirectReuseCpp = async () => {
+    const nodeFn = new Map<string, string>();
+    const fnNodes = graphSnapshot.nodes.filter((n: any) => n.kind === 'function' && n.functionId && !String(n.functionId).startsWith('glue:'));
+    for (const n of fnNodes) nodeFn.set(String(n.id), String(n.functionId));
+
+    const nodeIds = Array.from(nodeFn.keys());
+    if (!nodeIds.length) {
+      return '#include <iostream>\n\nint main() {\n  return 0;\n}\n';
+    }
+
+    const edges = graphSnapshot.edges
+      .filter((e: any) => nodeFn.has(String(e.from)) && nodeFn.has(String(e.to)))
+      .map((e: any) => ({ from: String(e.from), to: String(e.to) }));
+
+    const indeg = new Map<string, number>(nodeIds.map((id) => [id, 0] as [string, number]));
+    const out = new Map<string, string[]>(nodeIds.map((id) => [id, []] as [string, string[]]));
+    for (const e of edges) {
+      out.get(e.from)!.push(e.to);
+      indeg.set(e.to, (indeg.get(e.to) || 0) + 1);
+    }
+    const q = nodeIds.filter((id) => (indeg.get(id) || 0) === 0);
+    q.sort();
+    const order: string[] = [];
+    while (q.length) {
+      const id = q.shift()!;
+      order.push(id);
+      for (const to of out.get(id) || []) {
+        indeg.set(to, (indeg.get(to) || 0) - 1);
+        if ((indeg.get(to) || 0) === 0) {
+          q.push(to);
+          q.sort();
+        }
+      }
+    }
+    for (const id of nodeIds) if (!order.includes(id)) order.push(id);
+
+    const fnIds = Array.from(new Set(order.map((id) => nodeFn.get(id)!).filter(Boolean)));
+    const details = await Promise.all(
+      fnIds.map((id) => {
+        if (generatedFunctions[id]) return Promise.resolve({ function: generatedFunctions[id] } as any);
+        return ragGetFunction(id).catch(() => null);
+      })
+    );
+    const pieces: string[] = [];
+    pieces.push('#include <iostream>');
+    pieces.push('');
+    pieces.push('int main() {');
+    pieces.push('  return 0;');
+    pieces.push('}');
+    pieces.push('');
+    for (let i = 0; i < details.length; i += 1) {
+      const d: any = details[i];
+      const fn = d?.function || d;
+      const code = String(fn?.code || '').trim();
+      if (!code) continue;
+      pieces.push(code);
+      pieces.push('');
+    }
+    return pieces.join('\n');
+  };
+
+  const buildCanvasGateStubCpp = () => {
+    const fnNodes = graphSnapshot.nodes.filter((n: any) => n.kind === 'function' && n.functionId && !String(n.functionId).startsWith('glue:'));
+    const nodeFn = new Map<string, { functionId: string; displayName: string }>();
+    for (const n of fnNodes) {
+      nodeFn.set(String(n.id), { functionId: String(n.functionId), displayName: String(n.displayName || n.functionId) });
+    }
+    const nodeIds = Array.from(nodeFn.keys());
+    const edges = graphSnapshot.edges
+      .filter((e: any) => nodeFn.has(String(e.from)) && nodeFn.has(String(e.to)))
+      .map((e: any) => ({ from: String(e.from), to: String(e.to) }));
+    const indeg = new Map<string, number>(nodeIds.map((id) => [id, 0] as [string, number]));
+    const out = new Map<string, string[]>(nodeIds.map((id) => [id, []] as [string, string[]]));
+    for (const e of edges) {
+      out.get(e.from)!.push(e.to);
+      indeg.set(e.to, (indeg.get(e.to) || 0) + 1);
+    }
+    const q = nodeIds.filter((id) => (indeg.get(id) || 0) === 0);
+    q.sort();
+    const order: string[] = [];
+    while (q.length) {
+      const id = q.shift()!;
+      order.push(id);
+      for (const to of out.get(id) || []) {
+        indeg.set(to, (indeg.get(to) || 0) - 1);
+        if ((indeg.get(to) || 0) === 0) {
+          q.push(to);
+          q.sort();
+        }
+      }
+    }
+    for (const id of nodeIds) if (!order.includes(id)) order.push(id);
+
+    const lines: string[] = [];
+    lines.push('#include <iostream>');
+    lines.push('#include <string>');
+    lines.push('');
+    lines.push('struct CanvasContext {};');
+    lines.push('');
+    for (let i = 0; i < order.length; i += 1) {
+      const it = nodeFn.get(order[i]);
+      if (!it) continue;
+      const label = (it.displayName || it.functionId).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      lines.push(`static void node_${i}(CanvasContext&) { std::cout << "[node] ${label}" << std::endl; }`);
+    }
+    lines.push('');
+    lines.push('int main() {');
+    lines.push('  CanvasContext ctx;');
+    for (let i = 0; i < order.length; i += 1) {
+      if (!nodeFn.get(order[i])) continue;
+      lines.push(`  node_${i}(ctx);`);
+    }
+    lines.push('  return 0;');
+    lines.push('}');
+    lines.push('');
+    return lines.join('\n');
+  };
+
+  const buildQaStylePrompt = (p: { requirement: string; analysis: string; risk: string; ambiguity: string; missing: string; canvasCode: string }) => {
+    const norm = (s: string) => String(s || '').trim();
+    const req = norm(p.requirement);
+    const analysis = norm(p.analysis);
+    const risk = norm(p.risk);
+    const ambiguity = norm(p.ambiguity);
+    const missing = norm(p.missing);
+    const canvasCode = norm(p.canvasCode);
+    const rules = String.raw`【C++代码改写统一规范（必须严格遵守）】
+生成 C++ 代码改写时需按统一表格字段与编码规范填写与实现：完成日期与姓名按“每个函数一行”分别记录以便追溯与工时统计；改写后文件夹名称采用大驼峰命名（如 BezierSpline），改写后源文件与头文件采用小驼峰命名（如 funBezier.cpp、funBezier.h），改写后路径按实际工程路径填写；改写前类型仅能在“类/函数”中二选一；改写后一级函数名必须同时满足三条约束：提供 Doxygen 函数说明、使用小驼峰且不得包含“_”“.”等分隔符、并作为测试用例中可由 main 直接调用的最上层入口（如 generateBezierPath），二级函数名为一级函数调用的下层函数（如 pointOnCubicBezier），三级函数名为二级函数调用的更下层函数（若有则同样小驼峰命名）；同时需给出函数中文名称（如“贝塞尔曲线”）用于组件展示与检索；整体质量与设计要求为：编译器警告/错误等级必须拉到最高并消除全部告警，代码结构必须包含注释说明、设计文档与函数主体三部分，不允许使用全局变量且静态变量不推荐使用（尽量将状态保存在顶层函数变量中），函数职责应单一，函数/类命名统一采用驼峰法，函数名展示长度建议不超过 12 个汉字，源码统一使用 UTF-8 编码，注释统一采用 Doxygen 格式且使用中文标点；控制流与语言特性限制为：禁止使用 goto，以及在 if-else 的 body 内禁止出现 return、break 等逻辑跳出语句，单个函数代码行数上限为 200 行；代码改写遵循“整体按 C 语言规范书写”的原则：复合函数必须采用 C 风格接口与实现形态，原子函数内部可采用少量 C++ 语法但对外接口必须呈现 C 语法格式，不支持类与模板语法，容器类（如 vector）需改为定长数组或 malloc 动态分配，指针使用方式需统一为“数组化”呈现并保持风格一致，表达式需拆解为清晰的逐步计算节点（禁止 ++/--，+=/-= 等复合赋值必须展开为显式赋值，三目运算符必须改为 if-else）；逻辑控制语句需满足“条件为单一变量、执行体为单一函数、禁止逻辑跳出语句”的约束：if-else 的条件变量应来自变量赋值或函数返回的单值比较，执行体封装为单一原子/复合函数且允许只有 if 无 else，但禁止在 if/else 内提前 return；for 循环必须将起始值、步进值、结束值拆为单一变量并以显式赋值/函数赋值方式获得，循环体同样封装为单一函数；注释细则为：函数头注释按给定 Doxygen 字段模板完整填写（含 @brief、@en_name、@cn_name、@type、@param、@param[IN]/[OUT]、@var、@retval、@granularity、@tag_level1/@tag_level2、@formula、@version、@date、@author 等），复合函数体内局部变量声明/定义必须在行尾注释说明变量含义；结构体字段采用大驼峰命名并在行尾注释中标注物理单位，数组字段在 @field 中用 Array<元素类型, 维度> 书写；枚举、宏定义与宏函数分别按对应 Doxygen 规范注释，其中宏定义可按日常习惯行尾注释即可，宏函数需提供 @tag MACRO_Function 与入参/返回值说明。`;
+    return [
+      '你是智能驾驶代码生产线的 C++ 代码生成器。',
+      '',
+      '【用户需求】',
+      req || '-',
+      '',
+      '【问题分析】',
+      analysis || '-',
+      '',
+      '【风险点】',
+      risk || '-',
+      '',
+      '【歧义点】',
+      ambiguity || '-',
+      '',
+      '【缺失信息】',
+      missing || '-',
+      '',
+      '【画布现有代码（只读引用）】',
+      canvasCode || '-',
+      '',
+      '【生成要求】',
+      rules
+    ].join('\n');
+  };
+
+  const buildNewFunctionJsonPrompt = (p: {
+    requirement: string;
+    analysis: string;
+    canvasCode: string;
+    functionId: string;
+  }) => {
+    const base = buildQaStylePrompt({ requirement: p.requirement, analysis: p.analysis, risk: '', ambiguity: '', missing: '', canvasCode: p.canvasCode });
+    return [
+      '你需要在现有工程中新增一个 C/C++ 复合函数。请严格输出 JSON（不要 markdown，不要解释文字）。',
+      '必须满足：',
+      '1) 只生成一个“函数”，不要生成 main()，不要生成示例程序。',
+      '2) code 必须是【单个函数】的完整实现（允许必要的 #include 与 Doxygen 注释），且能在门禁工作区独立编译。',
+      '3) 函数名必须是小驼峰，且不得包含 _ 或 .。',
+      `4) function_id 固定为：${p.functionId}`,
+      '',
+      '输出 schema：',
+      '{ "function_id": string, "display_name": string, "cn_name": string, "module": string, "signature": string, "doc_zh": string, "doc_en": string, "code": string }',
+      '',
+      base
+    ].join('\n');
+  };
+
+  const runGenerateByMode = async () => {
+    if (!prompt.trim() && generationMode !== 'canvas') {
+      appendLog('生成失败：需求不能为空');
+      return;
+    }
+    if (generationMode === 'reuse') {
+      setReuseManagerOpen(true);
+      appendLog('已打开模块管理：请选择要复用的函数/模块并注入画布');
+      return;
+    }
+    setBusy(true);
+    setAiEditSummary('');
+    setAiEditStartSignal((v) => v + 1);
+    try {
+      if (generationMode === 'canvas') {
+        appendLog('开始按照画布直接复用生成...');
+        const cpp = await buildDirectReuseCpp();
+        setGeneratedCode(cpp);
+        setAiEditSummary(`已按画布直接复用生成，代码长度 ${cpp.length}。`);
+        setAiEditApplySignal((v) => v + 1);
+        appendLog(`生成成功：代码长度=${cpp.length}`);
+        return;
+      }
+
+      if (generationMode === 'analyze') {
+        appendLog('开始任务分析...');
+        const selectedFunctionIds: string[] = Array.from(
+          new Set<string>(
+            graphSnapshot.nodes
+              .filter((n: any) => n.kind === 'function' && n.functionId && !String(n.functionId).startsWith('glue:'))
+              .map((n: any) => String(n.functionId))
+          )
+        );
+        const res = await taskAnalyze({
+          target_module: 'default',
+          intent: '实现需求',
+          feature_description: prompt.trim(),
+          input_spec: '',
+          output_spec: '',
+          generation_question: prompt.trim(),
+          selected_function_ids: selectedFunctionIds,
+          selected_workflow: null,
+          root_dir: rootDir,
+          rag_top_k: 8
+        });
+        if (!res.ok) {
+          appendLog(`任务分析失败：${res.error || 'unknown'}`);
+          setAiEditFailSignal((v) => v + 1);
+          return;
+        }
+        const analysisMd = String(res.analysis_markdown || '');
+        setTaskAnalysisResult(analysisMd);
+        appendLog('开始从问题分析中提取 QA 清单...');
+        const md = analysisMd.replace(/\r\n/g, '\n');
+        const pickSection = (title: string) => {
+          const re = new RegExp(`^#{1,6}\\s*${title}\\s*$([\\s\\S]*?)(^#{1,6}\\s|$)`, 'm');
+          const m = md.match(re);
+          if (!m) return '';
+          return String(m[1] || '').trim();
+        };
+        const riskBlock = pickSection('风险点/歧义点') || pickSection('风险点') || '';
+        const missingBlock = pickSection('缺失信息清单') || pickSection('缺失信息') || '';
+        const riskLines = riskBlock
+          .split('\n')
+          .map((x) => x.trim())
+          .filter(Boolean)
+          .filter((x) => /^[-*\d.、]/.test(x))
+          .map((x) => x.replace(/^[-*\d.、\s]+/, '').trim())
+          .filter(Boolean);
+        const missingLines = missingBlock
+          .split('\n')
+          .map((x) => x.trim())
+          .filter(Boolean)
+          .filter((x) => /^[-*\d.、]/.test(x))
+          .map((x) => x.replace(/^[-*\d.、\s]+/, '').trim())
+          .filter(Boolean);
+        setQaRisk(riskLines.join('\n'));
+        setQaAmbiguity('');
+        setQaMissing(missingLines.join('\n'));
+        const ctx = await buildCanvasCodeContext();
+        setQaCanvasCodeContext(ctx);
+        setQaAutoOpenSignal((v) => v + 1);
+        appendLog('已生成问题分析与 QA 清单，请在 QA 面板逐条确认后生成代码。');
+        setAiEditApplySignal((v) => v + 1);
+        return;
+      }
+
+      if (generationMode === 'new_function') {
+        appendLog('开始生成新函数...');
+        const canvasCode = await buildCanvasCodeContext();
+        let analysis = '';
+        try {
+          const selectedFunctionIds: string[] = Array.from(
+            new Set<string>(
+              graphSnapshot.nodes
+                .filter((n: any) => n.kind === 'function' && n.functionId && !String(n.functionId).startsWith('glue:'))
+                .map((n: any) => String(n.functionId))
+            )
+          );
+          const res = await taskAnalyze({
+            target_module: 'default',
+            intent: '新增函数',
+            feature_description: prompt.trim(),
+            input_spec: '',
+            output_spec: '',
+            generation_question: prompt.trim(),
+            selected_function_ids: selectedFunctionIds,
+            selected_workflow: null,
+            root_dir: rootDir,
+            rag_top_k: 8
+          });
+          analysis = String(res.analysis_markdown || '');
+        } catch {
+          analysis = '';
+        }
+        const functionId = `genfn_${Date.now()}`;
+        const llmPrompt = buildNewFunctionJsonPrompt({ requirement: prompt, analysis, canvasCode, functionId });
+        let r = await orchestratorGenerate(llmPrompt);
+        if (!r.ok || !r.result) {
+          appendLog(`生成失败：${r.error || 'empty result'}`);
+          setAiEditFailSignal((v) => v + 1);
+          return;
+        }
+        const tryParseObj = (text: string) => {
+          try {
+            return JSON.parse(String(text || ''));
+          } catch {
+            return null;
+          }
+        };
+        let obj: any = tryParseObj(String(r.result));
+        let code = obj?.code ? String(obj.code) : extractFirstCppBlock(String(r.result));
+        let v = validateGeneratedFunctionCode(code);
+        if (!v.ok) {
+          const retryPrompt = [
+            '上一次输出不符合要求，请重试并严格输出 JSON。',
+            `不合格原因：${v.reason}`,
+            '再次强调：不要输出 main()，code 必须是单个函数实现且包含 Doxygen 字段（@brief/@en_name/@cn_name 等）。',
+            '',
+            llmPrompt
+          ].join('\n');
+          r = await orchestratorGenerate(retryPrompt);
+          if (!r.ok || !r.result) {
+            appendLog(`生成失败：${r.error || 'empty result'}`);
+            setAiEditFailSignal((v2) => v2 + 1);
+            return;
+          }
+          obj = tryParseObj(String(r.result));
+          code = obj?.code ? String(obj.code) : extractFirstCppBlock(String(r.result));
+          v = validateGeneratedFunctionCode(code);
+        }
+        if (!v.ok) {
+          appendLog(`新函数生成失败：${v.reason}`);
+          setAiEditFailSignal((v2) => v2 + 1);
+          return;
+        }
+        const preferredName = (() => {
+          const n = String(obj?.display_name || '').trim();
+          if (n && !/genfn_\d+/.test(n) && !/^新函数_/i.test(n)) return n;
+          const cn = String(obj?.cn_name || '').trim();
+          if (cn) return sanitizeCnDisplayName(cn).slice(0, 12);
+          const dz = String(obj?.doc_zh || '').trim();
+          if (dz) {
+            const cn2 = extractCnNameFromDoc(dz);
+            if (cn2) return sanitizeCnDisplayName(cn2).slice(0, 12);
+            const first = dz.split(/\r?\n/).map((x) => x.trim()).filter(Boolean)[0] || '';
+            if (first) return first.slice(0, 24);
+          }
+          const cn3 = extractCnNameFromCode(code);
+          if (cn3) return sanitizeCnDisplayName(cn3).slice(0, 12);
+          const d = deriveDisplayNameFromPrompt(prompt);
+          return d ? d : `新函数_${functionId}`;
+        })();
+        const displayName = sanitizeCnDisplayName(preferredName);
+        const sig = String(obj?.signature || '');
+        const mod = String(obj?.module || 'common');
+
+        const parsed = parseFunctionBlocksFromCode(code);
+        if (parsed.blocks.length > 1) {
+          const moduleKey = `genmod_${Date.now()}`;
+          const moduleName = sanitizeCnDisplayName(parsed.blocks[0]?.cn_name || displayName || deriveDisplayNameFromPrompt(prompt) || `新模块_${moduleKey}`);
+          setGeneratedFunctions((prev) => {
+            const next = { ...prev };
+            for (let i = 0; i < parsed.blocks.length; i += 1) {
+              const b = parsed.blocks[i];
+              const fid = i === 0 ? functionId : `genfn_${Date.now()}_${i}`;
+              const dn = sanitizeCnDisplayName(b.cn_name || b.name || moduleName || fid);
+              const full = [parsed.preamble, b.text].filter(Boolean).join('\n\n').trim();
+              next[fid] = {
+                display_name: dn,
+                signature: b.signature || '',
+                module: mod,
+                doc_zh: String(obj?.doc_zh || ''),
+                doc_en: String(obj?.doc_en || ''),
+                code: full
+              };
+            }
+            return next;
+          });
+
+          const nodes = parsed.blocks.map((b, i) => {
+            const fid = i === 0 ? functionId : `genfn_${Date.now()}_${i}`;
+            return {
+              id: `n${i + 1}`,
+              kind: 'function',
+              functionId: fid,
+              displayName: sanitizeCnDisplayName(b.cn_name || b.name || `fn${i + 1}`),
+              module: mod,
+              signature: b.signature || '',
+              inputsJson: '{}',
+              outputsJson: '{}',
+              x: i * 240,
+              y: 0
+            };
+          });
+          const edges = parsed.blocks.slice(1).map((_, i) => ({ id: `e${i + 1}`, from: `n${i + 1}`, to: `n${i + 2}` }));
+
+          setGeneratedModules((prev) => ({
+            ...prev,
+            [moduleKey]: { module_key: moduleKey, display_name: moduleName, doc_zh: String(obj?.doc_zh || ''), nodes, edges }
+          }));
+          setNewModelPayload({ moduleKey, displayName: moduleName });
+          setNewModelSignal((v) => v + 1);
+          appendLog(`新模块已生成并加入画布：${moduleName}`);
+          setAiEditApplySignal((v) => v + 1);
+          return;
+        }
+
+        setGeneratedFunctions((prev) => ({
+          ...prev,
+          [functionId]: {
+            display_name: displayName,
+            signature: sig,
+            module: mod,
+            doc_zh: String(obj?.doc_zh || ''),
+            doc_en: String(obj?.doc_en || ''),
+            code
+          }
+        }));
+        setInjectFunctionPayload({ functionId, displayName, signature: sig, module: mod });
+        setInjectFunctionSignal((v) => v + 1);
+        appendLog(`新函数已生成并加入画布：${displayName}`);
+        setAiEditApplySignal((v) => v + 1);
+        return;
+      }
+
+      if (generationMode === 'new_module') {
+        appendLog('开始生成新模块...');
+        const canvasCode = await buildCanvasCodeContext();
+        let analysis = '';
+        try {
+          const selectedFunctionIds: string[] = Array.from(
+            new Set<string>(
+              graphSnapshot.nodes
+                .filter((n: any) => n.kind === 'function' && n.functionId && !String(n.functionId).startsWith('glue:'))
+                .map((n: any) => String(n.functionId))
+            )
+          );
+          const res = await taskAnalyze({
+            target_module: 'default',
+            intent: '新增模块',
+            feature_description: prompt.trim(),
+            input_spec: '',
+            output_spec: '',
+            generation_question: prompt.trim(),
+            selected_function_ids: selectedFunctionIds,
+            selected_workflow: null,
+            root_dir: rootDir,
+            rag_top_k: 8
+          });
+          analysis = String(res.analysis_markdown || '');
+        } catch {
+          analysis = '';
+        }
+        const reqPrompt = buildQaStylePrompt({ requirement: prompt, analysis, risk: '', ambiguity: '', missing: '', canvasCode });
+        const moduleKey = `genmod_${Date.now()}`;
+        const llmPrompt = [
+          '你需要新增一个模块（多个函数 + 连接关系），并以画布图的形式输出。请严格输出 JSON（不要 markdown）。',
+          '输出 schema：{ "module_key": string, "display_name": string, "doc_zh": string, "functions": Array<{"function_id":string,"display_name":string,"module":string,"signature":string,"doc_zh":string,"doc_en":string,"code":string}>, "nodes": any[], "edges": any[] }',
+          `module_key 固定为：${moduleKey}`,
+          'nodes/edges 需可直接用于画布（节点需包含 kind=function/module、functionId/moduleKey、displayName、module、signature、inputsJson、outputsJson、x、y 等关键字段）。',
+          '',
+          reqPrompt
+        ].join('\n');
+        const r = await orchestratorGenerate(llmPrompt);
+        if (!r.ok || !r.result) {
+          appendLog(`生成失败：${r.error || 'empty result'}`);
+          setAiEditFailSignal((v) => v + 1);
+          return;
+        }
+        let obj: any = null;
+        try {
+          obj = JSON.parse(String(r.result));
+        } catch {
+          obj = null;
+        }
+        if (!obj || !obj.module_key) {
+          appendLog('生成失败：未得到有效的模块 JSON');
+          setAiEditFailSignal((v) => v + 1);
+          return;
+        }
+        const displayName = (() => {
+          const n = String(obj?.display_name || '').trim();
+          if (n && !/genmod_\d+/.test(n) && !/^新模块_/i.test(n)) return n;
+          const dz = String(obj?.doc_zh || '').trim();
+          if (dz) {
+            const first = dz.split(/\r?\n/).map((x) => x.trim()).filter(Boolean)[0] || '';
+            if (first) return first.slice(0, 24);
+          }
+          const p = prompt.trim();
+          return p ? p.slice(0, 24) : `新模块_${moduleKey}`;
+        })();
+        const docZh = String(obj.doc_zh || `模块 ${displayName}`);
+        const nodes = Array.isArray(obj.nodes) ? obj.nodes : [];
+        const edges = Array.isArray(obj.edges) ? obj.edges : [];
+        const fns = Array.isArray(obj.functions) ? obj.functions : [];
+        if (fns.length) {
+          setGeneratedFunctions((prev) => {
+            const next = { ...prev };
+            for (const it of fns) {
+              const fid = String(it?.function_id || '').trim();
+              if (!fid) continue;
+              next[fid] = {
+                display_name: String(it?.display_name || fid),
+                signature: String(it?.signature || ''),
+                module: String(it?.module || 'common'),
+                doc_zh: String(it?.doc_zh || ''),
+                doc_en: String(it?.doc_en || ''),
+                code: String(it?.code || '')
+              };
+            }
+            return next;
+          });
+        }
+        setGeneratedModules((prev) => ({
+          ...prev,
+          [moduleKey]: { module_key: moduleKey, display_name: displayName, doc_zh: docZh, nodes, edges }
+        }));
+        setNewModelPayload({ moduleKey, displayName });
+        setNewModelSignal((v) => v + 1);
+        appendLog(`新模块已生成并加入画布：${moduleKey}`);
+        setAiEditApplySignal((v) => v + 1);
+        return;
+      }
+    } catch (e) {
+      appendLog(`生成异常：${e instanceof Error ? e.message : 'unknown'}`);
+      setAiEditFailSignal((v) => v + 1);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runGenerateFromQaPrompt = async (finalPrompt: string) => {
+    const p = String(finalPrompt || '').trim();
+    if (!p) {
       appendLog('生成失败：提示词不能为空');
       return;
     }
@@ -229,18 +1037,19 @@ export default function App() {
     setAiEditStartSignal((v) => v + 1);
     appendLog('开始调用编排生成接口...');
     try {
-      const r = await orchestratorGenerate(prompt);
+      const r = await orchestratorGenerate(p);
       if (!r.ok || !r.result) {
         appendLog(`生成失败：${r.error || 'empty result'}`);
         setAiEditFailSignal((v) => v + 1);
         return;
       }
-      setGeneratedCode(r.result);
-      const briefPrompt = prompt.replace(/\s+/g, ' ').trim();
+      const code = extractFirstCppBlock(String(r.result));
+      setGeneratedCode(code);
+      const briefPrompt = p.replace(/\s+/g, ' ').trim();
       const promptText = briefPrompt.length > 42 ? `${briefPrompt.slice(0, 42)}...` : briefPrompt;
-      setAiEditSummary(`已按指令“${promptText || '生成代码'}”完成变更，生成结果长度 ${r.result.length}。`);
+      setAiEditSummary(`已按指令“${promptText || '生成代码'}”完成变更，生成结果长度 ${code.length}。`);
       setAiEditApplySignal((v) => v + 1);
-      appendLog(`生成成功：代码长度=${r.result.length}`);
+      appendLog(`生成成功：代码长度=${code.length}`);
     } catch (e) {
       appendLog(`生成异常：${e instanceof Error ? e.message : 'unknown'}`);
       setAiEditFailSignal((v) => v + 1);
@@ -257,13 +1066,13 @@ export default function App() {
     }
     setTaskAnalyzeBusy(true);
     try {
-      const selectedFunctionIds = Array.from(
-        new Set(
-          graphSnapshot.nodes
-            .filter((n: any) => n.kind === 'function' && n.functionId && !String(n.functionId).startsWith('glue:'))
-            .map((n: any) => String(n.functionId))
-        )
-      );
+    const selectedFunctionIds: string[] = Array.from(
+      new Set<string>(
+        graphSnapshot.nodes
+          .filter((n: any) => n.kind === 'function' && n.functionId && !String(n.functionId).startsWith('glue:'))
+          .map((n: any) => String(n.functionId))
+      )
+    );
       const res = await taskAnalyze({
         target_module: taskTargetModule || 'default',
         intent: taskIntent || '实现需求',
@@ -297,24 +1106,28 @@ export default function App() {
     }
     setQaBusy(true);
     try {
-      const [risk, ambiguity, missing] = await Promise.all([
-        cotQuestion({
-          context,
-          item: '请给出风险点清单，按“风险-影响-建议”格式输出。'
-        }),
-        cotQuestion({
-          context,
-          item: '请给出歧义点清单，按“歧义-需要澄清内容”格式输出。'
-        }),
-        cotQuestion({
-          context,
-          item: '请给出缺失信息清单，按“缺失项-建议补充方式”格式输出。'
-        })
-      ]);
-      setQaRisk(String(risk.answer || ''));
-      setQaAmbiguity(String(ambiguity.answer || ''));
-      setQaMissing(String(missing.answer || ''));
-      appendLog('QA分析完成：已生成风险点/歧义点/缺失信息清单');
+      const md = context.replace(/\r\n/g, '\n');
+      const pickSection = (title: string) => {
+        const re = new RegExp(`^#{1,6}\\s*${title}\\s*$([\\s\\S]*?)(^#{1,6}\\s|$)`, 'm');
+        const m = md.match(re);
+        if (!m) return '';
+        return String(m[1] || '').trim();
+      };
+      const riskBlock = pickSection('风险点/歧义点') || pickSection('风险点') || '';
+      const missingBlock = pickSection('缺失信息清单') || pickSection('缺失信息') || '';
+      const listLines = (block: string) =>
+        block
+          .split('\n')
+          .map((x) => x.trim())
+          .filter(Boolean)
+          .filter((x) => /^[-*\d.、]/.test(x))
+          .map((x) => x.replace(/^[-*\d.、\s]+/, '').trim())
+          .filter(Boolean);
+
+      setQaRisk(listLines(riskBlock).join('\n'));
+      setQaAmbiguity('');
+      setQaMissing(listLines(missingBlock).join('\n'));
+      appendLog('QA分析完成：已从任务分析结果提取风险点/缺失信息清单');
     } catch (e) {
       appendLog(`QA分析异常：${e instanceof Error ? e.message : 'unknown'}`);
     } finally {
@@ -353,12 +1166,17 @@ export default function App() {
     setPipelineSteps((prev) => prev.map((s) => ({ ...s, status: 'pending' })));
     appendLog('开始执行门禁任务...');
     try {
+      const gatePayload = /```/.test(generatedCode) ? generatedCode : `\n\n\`\`\`cpp\n${generatedCode}\n\`\`\`\n`;
+      const effectivePayload =
+        generationMode === 'canvas'
+          ? `\n\n\`\`\`cpp\n${buildCanvasGateStubCpp()}\n\`\`\`\n`
+          : gatePayload;
       const started = await gateStart({
-        work_dir: rootDir,
-        compile_command: 'cmake --build .',
-        static_command: 'echo static-check',
+        work_dir: 'AUTO',
+        compile_command: 'AUTO',
+        static_command: 'AUTO',
         requirement_prompt: prompt,
-        generated_result: generatedCode
+        generated_result: effectivePayload
       });
       if (!started.ok || !started.job_id) {
         appendLog(`门禁启动失败：${started.error || 'unknown'}`);
@@ -456,7 +1274,7 @@ export default function App() {
 
   const doDeploy = async () => {
     const fnNodes = graphSnapshot.nodes.filter((n: any) => n.kind === 'function' && n.functionId && !String(n.functionId).startsWith('glue:'));
-    const uniqueIds = Array.from(new Set(fnNodes.map((n: any) => String(n.functionId))));
+    const uniqueIds: string[] = Array.from(new Set<string>(fnNodes.map((n: any) => String(n.functionId))));
     if (!uniqueIds.length) {
       appendLog('部署失败：当前画布没有可发布函数节点');
       return;
@@ -497,6 +1315,150 @@ export default function App() {
     }
   };
 
+  const runExportModule = async (payload: { canvasId: string; canvasName: string; nodes: any[]; edges: any[] }) => {
+    const name = (window.prompt('请输入导出模块名称', payload.canvasName || `module_${Date.now().toString().slice(-5)}`) || '').trim();
+    if (!name) return;
+    const moduleKey = name.replace(/\s+/g, '_').replace(/[^\w\u4e00-\u9fa5-]/g, '').toLowerCase() || `module_${Date.now()}`;
+    const doc = (window.prompt('请输入模块说明（可选）', `模块 ${name}`) || '').trim();
+
+    setBusy(true);
+    setAiEditSummary('');
+    setAiEditStartSignal((v) => v + 1);
+    setPipelineSteps((prev) => prev.map((s) => ({ ...s, status: 'pending' })));
+    appendLog(`开始导出模块：${name} (${moduleKey})`);
+
+    try {
+      const upsert = await ragUpsertModule({
+        root_dir: rootDir,
+        module: {
+          module_key: moduleKey,
+          display_name: name,
+          doc_zh: doc || `模块 ${name}`,
+          nodes: payload.nodes,
+          edges: payload.edges,
+          source: 'canvas-export'
+        }
+      });
+      if (!upsert.ok) {
+        appendLog(`导出失败：模块写入失败：${upsert.error || 'unknown'}`);
+        return;
+      }
+      appendLog(`模块已写入模块库：${moduleKey}`);
+
+      const moduleSpec = JSON.stringify({ canvas: { id: payload.canvasId, name: payload.canvasName }, nodes: payload.nodes, edges: payload.edges }, null, 2);
+      const exportPrompt = [
+        prompt.trim(),
+        `\n\n请基于以下模块定义生成可编译的代码变更，并说明关键实现要点。`,
+        `模块Key：${moduleKey}`,
+        `模块名：${name}`,
+        `模块定义(JSON)：\n${moduleSpec}`
+      ]
+        .filter(Boolean)
+        .join('\n');
+
+      appendLog('开始生成代码...');
+      const r = await orchestratorGenerate(exportPrompt);
+      if (!r.ok || !r.result) {
+        appendLog(`生成失败：${r.error || 'empty result'}`);
+        setAiEditFailSignal((v) => v + 1);
+        return;
+      }
+      setGeneratedCode(r.result);
+      const brief = exportPrompt.replace(/\s+/g, ' ').trim();
+      const briefText = brief.length > 42 ? `${brief.slice(0, 42)}...` : brief;
+      setAiEditSummary(`已按指令“${briefText || '导出模块'}”完成变更，生成结果长度 ${r.result.length}。`);
+      setAiEditApplySignal((v) => v + 1);
+      appendLog(`生成成功：代码长度=${r.result.length}`);
+
+      appendLog('开始执行门禁任务...');
+      const started = await gateStart({
+        work_dir: 'AUTO',
+        compile_command: 'AUTO',
+        static_command: 'AUTO',
+        requirement_prompt: exportPrompt,
+        generated_result: r.result
+      });
+      if (!started.ok || !started.job_id) {
+        appendLog(`门禁启动失败：${started.error || 'unknown'}`);
+        return;
+      }
+      appendLog(`门禁任务已启动：${started.job_id}`);
+      let gateOk = false;
+      while (true) {
+        const st = await gateGetJob(started.job_id);
+        setPipelineSteps((prev) =>
+          prev.map((p) => {
+            const hit = st.statuses.find((x) => x.step === p.id);
+            if (!hit) return p;
+            return {
+              ...p,
+              status: hit.status === 'failed' ? 'failure' : hit.status === 'success' ? 'success' : hit.status === 'running' ? 'running' : 'pending'
+            };
+          })
+        );
+        const summary = st.statuses.map((s) => `${s.step}:${s.status}`).join(' | ');
+        appendLog(`门禁进度：${summary}`);
+        if (st.done) {
+          gateOk = !st.error;
+          appendLog(st.error ? `门禁结束（失败）：${st.error}` : '门禁结束（完成）');
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+      }
+      if (!gateOk) return;
+
+      const fnIds: string[] = Array.from(
+        new Set<string>(
+          (payload.nodes || [])
+            .filter((n: any) => n.kind === 'function' && n.functionId && !String(n.functionId).startsWith('glue:'))
+            .map((n: any) => String(n.functionId))
+        )
+      );
+      if (!fnIds.length) {
+        appendLog('发布跳过：当前选择子图没有可发布函数节点');
+        return;
+      }
+      const version = (window.prompt('请输入发布版本号', `v${new Date().toISOString().slice(0, 10).replace(/-/g, '')}_${moduleKey}`) || '').trim();
+      if (!version) return;
+
+      appendLog('开始发布函数到函数库...');
+      const details = await Promise.all(fnIds.map((id) => ragGetFunction(id)));
+      const functions = details
+        .map((d: any) => {
+          const fn = d?.function || d;
+          return {
+            name: String(fn?.display_name || fn?.name || ''),
+            signature: String(fn?.signature || ''),
+            content: String(fn?.code || ''),
+            file_path: String(fn?.file_path || ''),
+            comment: String(fn?.doc_zh || '')
+          };
+        })
+        .filter((f: any) => f.name && f.signature && f.content);
+      if (!functions.length) {
+        appendLog('发布失败：未取到可发布函数内容');
+        return;
+      }
+      const ragRes = await releaseRagIndex({ version, functions });
+      if (!ragRes.ok) {
+        appendLog(`发布失败（rag-index）：${ragRes.error || 'unknown'}`);
+        return;
+      }
+      const modRes = await releaseModulesUpsert({ version, namespace: projectName || 'default', functions });
+      if (!modRes.ok) {
+        appendLog(`发布失败（modules-upsert）：${modRes.error || 'unknown'}`);
+        return;
+      }
+      appendLog(`发布成功：version=${version} functions=${functions.length}`);
+    } catch (e) {
+      appendLog(`导出模块异常：${e instanceof Error ? e.message : 'unknown'}`);
+      setPipelineSteps((prev) => prev.map((p) => (p.status === 'running' ? { ...p, status: 'failure' } : p)));
+      setAiEditFailSignal((v) => v + 1);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   useEffect(() => {
     void runHealthCheck();
   }, []);
@@ -518,7 +1480,7 @@ export default function App() {
         backendOk={backendOk}
         onNewProject={doNewProject}
         onOpenProject={doOpenProject}
-        onSaveProject={doSaveProject}
+        onSaveProject={() => void doExportCanvasFile()}
         onNewModel={() => void doNewModel()}
         onRuntimeDesign={() => void doRuntimeDesign()}
         onDeploy={() => void doDeploy()}
@@ -534,16 +1496,28 @@ export default function App() {
         injectModuleSignal={runtimeInjectSignal}
         createModel={newModelPayload}
         createModelSignal={newModelSignal}
+        injectFunctionPayload={injectFunctionPayload}
+        injectFunctionSignal={injectFunctionSignal}
+        generatedFunctions={generatedFunctions}
+        generatedModules={generatedModules}
         aiEditStartSignal={aiEditStartSignal}
         aiEditApplySignal={aiEditApplySignal}
         aiEditFailSignal={aiEditFailSignal}
         aiEditSummary={aiEditSummary}
         onGraphChange={setGraphSnapshot}
+        importGraphPayload={importGraphPayload}
+        importGraphSignal={importGraphSignal}
+        onExportModule={(p) => void runExportModule(p)}
         rootDir={rootDir}
         setRootDir={setRootDir}
         prompt={prompt}
         setPrompt={setPrompt}
         generatedCode={generatedCode}
+        generationMode={generationMode}
+        setGenerationMode={setGenerationMode}
+        qaAutoOpenSignal={qaAutoOpenSignal}
+        qaCanvasCodeContext={qaCanvasCodeContext}
+        onGenerateFromQa={(p) => void runGenerateFromQaPrompt(p)}
         logs={logs}
         pipelineSteps={pipelineSteps}
         busy={busy}
@@ -572,7 +1546,9 @@ export default function App() {
         terminalBusy={terminalBusy}
         onRunTerminal={(command) => void runTerminalCommand(command)}
         onRunGate={() => void runGate()}
-        onGenerate={() => void runGenerate()}
+        onGenerate={() => void runGenerateByMode()}
+        injectReusePayload={injectReusePayload}
+        injectReuseSignal={injectReuseSignal}
       />
       {scanManagerOpen && (
         <CodeManagementPanel
@@ -580,6 +1556,65 @@ export default function App() {
           setRootDir={setRootDir}
           onClose={() => setScanManagerOpen(false)}
           onLog={appendLog}
+        />
+      )}
+      {reuseManagerOpen && (
+        <ReuseModulePanel
+          rootDir={rootDir}
+          requirementText={prompt}
+          canvasDigestText={(() => {
+            const ns = Array.isArray(graphSnapshot.nodes) ? graphSnapshot.nodes : [];
+            const es = Array.isArray(graphSnapshot.edges) ? graphSnapshot.edges : [];
+            const nameParts = ns
+              .filter((n: any) => String(n?.kind || '') === 'function')
+              .map((n: any) => String(n?.displayName || n?.functionId || '').trim())
+              .filter(Boolean)
+              .slice(0, 24);
+            const moduleParts = ns
+              .filter((n: any) => String(n?.kind || '') === 'module')
+              .map((n: any) => String(n?.displayName || n?.moduleKey || '').trim())
+              .filter(Boolean)
+              .slice(0, 12);
+            const edgeParts = es
+              .map((e: any) => {
+                const a = String(e?.from || '').trim();
+                const b = String(e?.to || '').trim();
+                if (!a || !b) return '';
+                return `${a} -> ${b}`;
+              })
+              .filter(Boolean)
+              .slice(0, 24);
+            return [
+              nameParts.length ? `functions: ${nameParts.join(', ')}` : '',
+              moduleParts.length ? `modules: ${moduleParts.join(', ')}` : '',
+              edgeParts.length ? `edges: ${edgeParts.join(', ')}` : ''
+            ]
+              .filter(Boolean)
+              .join('\n');
+          })()}
+          existingFunctionIds={Array.from(
+            new Set(
+              (Array.isArray(graphSnapshot.nodes) ? graphSnapshot.nodes : [])
+                .filter((n: any) => String(n?.kind || '') === 'function' && n?.functionId)
+                .map((n: any) => String(n.functionId))
+            )
+          )}
+          existingModuleKeys={Array.from(
+            new Set(
+              (Array.isArray(graphSnapshot.nodes) ? graphSnapshot.nodes : [])
+                .filter((n: any) => String(n?.kind || '') === 'module' && n?.moduleKey)
+                .map((n: any) => String(n.moduleKey))
+            )
+          )}
+          onClose={() => setReuseManagerOpen(false)}
+          onConfirm={(p) => {
+            setReuseManagerOpen(false);
+            const funcs = Array.isArray((p as any)?.functions) ? ((p as any).functions as any[]) : [];
+            const mods = Array.isArray((p as any)?.modules) ? ((p as any).modules as any[]) : [];
+            setInjectReusePayload({ functions: funcs, modules: mods });
+            setInjectReuseSignal((v) => v + 1);
+            appendLog(`已注入复用项到画布：函数 ${funcs.length}，模块 ${mods.length}`);
+          }}
         />
       )}
     </div>

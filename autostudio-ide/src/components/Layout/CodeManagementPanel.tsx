@@ -14,7 +14,6 @@ import {
   ragGetModuleIndexJob,
   ragListFunctions,
   ragListIndexedModules,
-  ragQuery,
   ragRunTest,
   ragScan,
   ragSaveFunctionSource,
@@ -58,11 +57,6 @@ export default function CodeManagementPanel(props: CodeManagementPanelProps) {
   const [editableCode, setEditableCode] = useState('');
   const [testCommand, setTestCommand] = useState('ctest -N');
   const [testOutput, setTestOutput] = useState('');
-  const [queryText, setQueryText] = useState('');
-  const [queryTopK, setQueryTopK] = useState(8);
-  const [queryModule, setQueryModule] = useState('');
-  const [queryBusy, setQueryBusy] = useState(false);
-  const [queryHits, setQueryHits] = useState<any[]>([]);
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 });
   const [indexJob, setIndexJob] = useState<RagIndexJobStatus | null>(null);
@@ -72,35 +66,107 @@ export default function CodeManagementPanel(props: CodeManagementPanelProps) {
   const [scanStats, setScanStats] = useState<{ files: number; functions: number; at: string } | null>(null);
   const folderRef = useRef<HTMLInputElement>(null);
 
+  const cacheScope = String(props.rootDir || '').trim() || 'all';
+  const cacheKeyFns = `gaasd:scanmgr:fns:v1:${cacheScope}`;
+  const cacheKeyMods = `gaasd:scanmgr:mods:v1:${cacheScope}`;
+
+  const readCache = <T,>(key: string): { total: number; items: T[] } | null => {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return null;
+      const obj = JSON.parse(raw);
+      const total = Number(obj?.total ?? 0);
+      const items = Array.isArray(obj?.items) ? (obj.items as T[]) : [];
+      if (!Number.isFinite(total) || total <= 0 || !items.length) return null;
+      return { total, items };
+    } catch {
+      return null;
+    }
+  };
+
+  const writeCache = <T,>(key: string, payload: { total: number; items: T[] }) => {
+    try {
+      localStorage.setItem(key, JSON.stringify({ ...payload, savedAt: Date.now() }));
+    } catch {
+    }
+  };
+
+  const loadAll = async <T,>(loader: (p: { limit: number; offset: number }) => Promise<{ total: number; items: T[] }>) => {
+    const limit = 1000;
+    let offset = 0;
+    const items: T[] = [];
+    for (let i = 0; i < 80; i += 1) {
+      const r = await loader({ limit, offset });
+      const got = Array.isArray((r as any).items) ? ((r as any).items as T[]) : [];
+      items.push(...got);
+      const total = Number((r as any).total ?? items.length);
+      if (items.length >= total) break;
+      if (!got.length) break;
+      offset += got.length;
+    }
+    return items;
+  };
+
   const selectedModule = useMemo(
     () => modules.find((m) => m.module_key === selectedModuleKey) || null,
     [modules, selectedModuleKey]
   );
 
-  const loadData = async () => {
-    setLoading(true);
+  const loadData = async (opts?: { force?: boolean }) => {
     setError('');
     try {
+      const canUseCache = !opts?.force && !query && !moduleFilter && !kindFilter;
+      if (canUseCache) {
+        const cachedFns = readCache<FunctionIndexItem>(cacheKeyFns);
+        const cachedMods = readCache<RagIndexedModuleItem>(cacheKeyMods);
+        if (cachedFns) setFunctions(cachedFns.items);
+        if (cachedMods) setModules(cachedMods.items);
+        const hasCache = Boolean(cachedFns?.items?.length || cachedMods?.items?.length);
+        if (hasCache) setLoading(false);
+
+        if (cachedFns && cachedMods) {
+          const [headFns, headMods] = await Promise.all([
+            ragListFunctions({ root_dir: props.rootDir || undefined, limit: 1, offset: 0 }),
+            ragListIndexedModules({ root_dir: props.rootDir || undefined, limit: 1, offset: 0 })
+          ]);
+          if (Number(headFns.total) === Number(cachedFns.total) && Number(headMods.total) === Number(cachedMods.total)) {
+            if (!selectedFunctionId && cachedFns.items.length) setSelectedFunctionId(cachedFns.items[0].function_id);
+            if (!selectedModuleKey && cachedMods.items.length) setSelectedModuleKey(cachedMods.items[0].module_key);
+            return;
+          }
+        }
+      }
+
+      const hasAny = Boolean(functions.length || modules.length);
+      if (!hasAny) setLoading(true);
       const [fns, mods] = await Promise.all([
-        ragListFunctions({
-          root_dir: props.rootDir || undefined,
-          q: query || undefined,
-          module: moduleFilter || undefined,
-          kind: kindFilter || undefined,
-          limit: 200,
-          offset: 0
-        }),
-        ragListIndexedModules({
-          root_dir: props.rootDir || undefined,
-          q: query || undefined,
-          limit: 200,
-          offset: 0
-        })
+        loadAll<FunctionIndexItem>(({ limit, offset }) =>
+          ragListFunctions({
+            root_dir: props.rootDir || undefined,
+            q: query || undefined,
+            module: moduleFilter || undefined,
+            kind: kindFilter || undefined,
+            limit,
+            offset
+          }) as any
+        ),
+        loadAll<RagIndexedModuleItem>(({ limit, offset }) =>
+          ragListIndexedModules({
+            root_dir: props.rootDir || undefined,
+            q: query || undefined,
+            limit,
+            offset
+          }) as any
+        )
       ]);
-      setFunctions(fns.items || []);
-      setModules(mods.items || []);
-      if (!selectedFunctionId && (fns.items || []).length) setSelectedFunctionId((fns.items || [])[0].function_id);
-      if (!selectedModuleKey && (mods.items || []).length) setSelectedModuleKey((mods.items || [])[0].module_key);
+      setFunctions(fns);
+      setModules(mods);
+      if (!selectedFunctionId && fns.length) setSelectedFunctionId(fns[0].function_id);
+      if (!selectedModuleKey && mods.length) setSelectedModuleKey(mods[0].module_key);
+      if (!query && !moduleFilter && !kindFilter) {
+        writeCache(cacheKeyFns, { total: fns.length, items: fns });
+        writeCache(cacheKeyMods, { total: mods.length, items: mods });
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : '加载失败');
     } finally {
@@ -124,7 +190,7 @@ export default function CodeManagementPanel(props: CodeManagementPanelProps) {
         at: new Date().toLocaleTimeString()
       });
       props.onLog?.(`扫描完成：files=${r.files} functions=${r.functions}`);
-      await loadData();
+      await loadData({ force: true });
     } catch (e) {
       const msg = e instanceof Error ? e.message : '扫描失败';
       setError(msg);
@@ -235,19 +301,6 @@ export default function CodeManagementPanel(props: CodeManagementPanelProps) {
       setError(e instanceof Error ? e.message : '模块索引任务启动失败');
     } finally {
       setOpBusy(false);
-    }
-  };
-
-  const runSimilarityQuery = async () => {
-    if (!queryText.trim()) return;
-    setQueryBusy(true);
-    try {
-      const out = await ragQuery(queryText, queryTopK, queryModule || null);
-      setQueryHits(Array.isArray(out?.hits) ? out.hits : []);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '检索失败');
-    } finally {
-      setQueryBusy(false);
     }
   };
 
@@ -435,23 +488,6 @@ export default function CodeManagementPanel(props: CodeManagementPanelProps) {
               placeholder="分类过滤"
               className="w-[130px] h-7 px-2 text-xs border border-[#E1BEE7] rounded outline-none"
             />
-          </div>
-          <div className="rounded border border-[#E1BEE7] p-2">
-            <div className="flex items-center gap-2">
-              <input value={queryText} onChange={(e) => setQueryText(e.target.value)} placeholder="相似检索 query" className="flex-1 h-7 px-2 border border-[#E1BEE7] rounded outline-none" />
-              <input value={String(queryTopK)} onChange={(e) => setQueryTopK(Math.max(1, Number(e.target.value) || 1))} className="w-16 h-7 px-2 border border-[#E1BEE7] rounded outline-none" />
-              <input value={queryModule} onChange={(e) => setQueryModule(e.target.value)} placeholder="module" className="w-40 h-7 px-2 border border-[#E1BEE7] rounded outline-none" />
-              <button onClick={() => void runSimilarityQuery()} disabled={queryBusy} className="h-7 px-3 rounded bg-[#6A1B9A] text-white disabled:opacity-50">{queryBusy ? '检索中...' : '检索'}</button>
-            </div>
-            {!!queryHits.length && (
-              <div className="mt-2 max-h-24 overflow-auto text-[11px] text-gray-600 divide-y divide-[#F3E6F7]">
-                {queryHits.map((h: any, i: number) => (
-                  <div key={`${h.function_id || 'f'}-${i}`} className="py-1">
-                    {(h.name || h.function_id || '-') + ' · score=' + (Number(h.score || 0).toFixed(3))}
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
           <div className="flex-1 min-h-0 grid grid-cols-[42%_58%] gap-3">
             <div className="rounded border border-[#E1BEE7] overflow-auto">

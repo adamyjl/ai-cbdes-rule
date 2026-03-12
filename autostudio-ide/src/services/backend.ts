@@ -9,7 +9,11 @@ export type FunctionIndexItem = {
   signature: string;
   display_name: string;
   module: string;
+  module_source?: string;
+  kind?: string;
+  kind_source?: string;
   doc_zh: string;
+  doc_en?: string;
   inputs_json?: string;
   outputs_json?: string;
   embedded: number;
@@ -63,7 +67,8 @@ async function parseJsonOrText(res: Response) {
 }
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
+  const u = resolveApiUrl(url);
+  const res = await fetch(u, {
     ...init,
     headers: {
       ...(init?.headers ?? {}),
@@ -78,12 +83,22 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 async function requestFormData<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
+  const u = resolveApiUrl(url);
+  const res = await fetch(u, init);
   if (!res.ok) {
     const body = await parseJsonOrText(res);
     throw new Error(typeof body === 'string' ? body : JSON.stringify(body));
   }
   return (await res.json()) as T;
+}
+
+function resolveApiUrl(url: string) {
+  const raw = String(url || '');
+  if (!raw.startsWith('/')) return raw;
+  const envBase = String((import.meta as any).env?.VITE_API_ORIGIN || '').trim().replace(/\/+$/, '');
+
+  if (envBase) return `${envBase}${raw}`;
+  return raw;
 }
 
 export async function healthPython() {
@@ -284,6 +299,13 @@ export async function ragEnrichFunction(function_id: string, root_dir?: string |
   });
 }
 
+export async function ragRepairModuleFromPath(root_dir?: string | null) {
+  return requestJson<{ ok: boolean; updated?: number; error?: string }>('/py/rag/repair-module-from-path', {
+    method: 'POST',
+    body: JSON.stringify({ root_dir: root_dir ?? null })
+  });
+}
+
 export async function ragSaveFunctionSource(req: {
   function_id: string;
   new_code: string;
@@ -348,12 +370,20 @@ export type TaskAnalyzeResponse = {
 };
 
 export type CotQuestionResponse = {
-  question: string;
-  answer: string;
+  ok: boolean;
+  question?: string;
+  error?: string;
 };
 
 export type CotRefineResponse = {
-  refined: string;
+  ok: boolean;
+  resolved: boolean;
+  goal: string;
+  constraints: string;
+  subtasks: string;
+  risk_items: string[];
+  missing_items: string[];
+  error?: string;
 };
 
 export async function taskAnalyze(req: {
@@ -374,14 +404,31 @@ export async function taskAnalyze(req: {
   });
 }
 
-export async function cotQuestion(req: { context: string; item: string }) {
+export async function cotQuestion(req: {
+  mode: 'risk' | 'missing';
+  item: string;
+  goal?: string;
+  constraints?: string;
+  subtasks?: string;
+  risk_items?: string[];
+  missing_items?: string[];
+}) {
   return requestJson<CotQuestionResponse>('/py/cot/question', {
     method: 'POST',
     body: JSON.stringify(req)
   });
 }
 
-export async function cotRefine(req: { context: string; item: string; answer: string }) {
+export async function cotRefine(req: {
+  mode: 'risk' | 'missing';
+  item: string;
+  answer: string;
+  goal?: string;
+  constraints?: string;
+  subtasks?: string;
+  risk_items?: string[];
+  missing_items?: string[];
+}) {
   return requestJson<CotRefineResponse>('/py/cot/refine', {
     method: 'POST',
     body: JSON.stringify(req)
@@ -390,11 +437,12 @@ export async function cotRefine(req: { context: string; item: string; answer: st
 
 export async function cotGeneratePrompt(req: {
   goal: string;
-  constraints: string[];
-  subtasks: string[];
+  constraints: string;
+  subtasks: string;
   risk_items: string[];
   missing_items: string[];
   related_function_ids: string[];
+  root_dir?: string | null;
 }) {
   return requestJson<{ prompt: string }>('/py/cot/generate-prompt', {
     method: 'POST',

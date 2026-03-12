@@ -1,5 +1,5 @@
 import { Badge, Button, Card, Input, Popconfirm, Select, Space, Switch, Table, Typography, message } from 'antd'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Key } from 'react'
 import type { FunctionIndexItem, RagFunctionsResponse, RagModulesResponse } from '../../utils/api'
 import { ragDeleteFunctions, ragListFunctions, ragListModules } from '../../utils/api'
@@ -17,10 +17,52 @@ export function FunctionIndexBrowser(props: Props) {
   const [selectedModule, setSelectedModule] = useState<string | undefined>(undefined)
   const [selectedKind, setSelectedKind] = useState<string | undefined>(undefined)
   const [q, setQ] = useState('')
-  const [page, setPage] = useState(1)
   const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([])
   const [filterByRootDir, setFilterByRootDir] = useState(false)
-  const pageSize = 50
+  const didInitRef = useRef(false)
+  const pageChunk = 1000
+
+  const cacheKeyMods = useMemo(() => {
+    const scope = filterByRootDir ? `root:${props.rootDir || ''}` : 'all'
+    return `ragmgmt:fnmods:v1:${scope}`
+  }, [filterByRootDir, props.rootDir])
+
+  const cacheKeyFns = useMemo(() => {
+    const scope = filterByRootDir ? `root:${props.rootDir || ''}` : 'all'
+    return `ragmgmt:fns:v1:${scope}`
+  }, [filterByRootDir, props.rootDir])
+
+  const readCache = <T,>(key: string): any | null => {
+    try {
+      const raw = localStorage.getItem(key)
+      if (!raw) return null
+      return JSON.parse(raw)
+    } catch {
+      return null
+    }
+  }
+
+  const writeCache = (key: string, payload: any) => {
+    try {
+      localStorage.setItem(key, JSON.stringify({ ...payload, savedAt: Date.now() }))
+    } catch {
+    }
+  }
+
+  const loadAll = async <T,>(loader: (p: { offset: number; limit: number }) => Promise<{ total: number; items: T[] }>) => {
+    let offset = 0
+    const items: T[] = []
+    for (let i = 0; i < 80; i += 1) {
+      const res = await loader({ offset, limit: pageChunk })
+      const got = Array.isArray((res as any).items) ? ((res as any).items as T[]) : []
+      items.push(...got)
+      const total = Number((res as any).total ?? items.length)
+      if (items.length >= total) break
+      if (!got.length) break
+      offset += got.length
+    }
+    return items
+  }
 
   async function deleteSelected(ids: string[]) {
     if (!ids.length) return
@@ -41,19 +83,43 @@ export function FunctionIndexBrowser(props: Props) {
     setBusy(true)
     try {
       const effectiveRootDir = filterByRootDir ? props.rootDir : undefined
-      const [m, f] = await Promise.all([
+      const useCache = !q && !selectedModule && !selectedKind
+
+      if (useCache) {
+        const cachedM = readCache(cacheKeyMods)
+        const cachedF = readCache(cacheKeyFns)
+        if (cachedM?.modules?.length) {
+          setModules({ total: Number(cachedM.total || 0), embedded: Number(cachedM.embedded || 0), modules: cachedM.modules })
+        }
+        if (cachedF?.items?.length) {
+          setFunctions({ total: Number(cachedF.total || cachedF.items.length), limit: cachedF.items.length, offset: 0, items: cachedF.items })
+        }
+
+        if (cachedF?.total) {
+          const head = await ragListFunctions({ root_dir: effectiveRootDir, limit: 1, offset: 0 })
+          if (Number(head.total) === Number(cachedF.total)) {
+            if (!cachedM) {
+              const m = await ragListModules(effectiveRootDir)
+              setModules(m)
+              writeCache(cacheKeyMods, { total: Number(m.total || 0), embedded: Number(m.embedded || 0), modules: m.modules })
+            }
+            return
+          }
+        }
+      }
+
+      const [m, items] = await Promise.all([
         ragListModules(effectiveRootDir),
-        ragListFunctions({
-          root_dir: effectiveRootDir,
-          module: selectedModule,
-          kind: selectedKind,
-          q: q || undefined,
-          limit: pageSize,
-          offset: (page - 1) * pageSize
-        })
+        loadAll<FunctionIndexItem>(({ offset, limit }) =>
+          ragListFunctions({ root_dir: effectiveRootDir, module: selectedModule, kind: selectedKind, q: q || undefined, limit, offset }) as any
+        )
       ])
       setModules(m)
-      setFunctions(f)
+      setFunctions({ total: items.length, limit: items.length, offset: 0, items } as any)
+      if (useCache) {
+        writeCache(cacheKeyMods, { total: Number(m.total || 0), embedded: Number(m.embedded || 0), modules: m.modules })
+        writeCache(cacheKeyFns, { total: items.length, items })
+      }
     } finally {
       setBusy(false)
     }
@@ -64,12 +130,16 @@ export function FunctionIndexBrowser(props: Props) {
   }, [props.refreshToken])
 
   useEffect(() => {
-    setPage(1)
+    if (!didInitRef.current) {
+      didInitRef.current = true
+      return
+    }
+    setSelectedRowKeys([])
   }, [selectedModule, selectedKind, q])
 
   useEffect(() => {
     void load()
-  }, [selectedModule, selectedKind, q, page, filterByRootDir])
+  }, [selectedModule, selectedKind, q, filterByRootDir])
 
   const moduleOptions = useMemo(() => {
     const opts = [{ value: '', label: '全部模块' }]
@@ -179,7 +249,6 @@ export function FunctionIndexBrowser(props: Props) {
                 setFilterByRootDir(v)
                 setSelectedModule(undefined)
                 setQ('')
-                setPage(1)
               }}
             />
             <Typography.Text style={{ color: 'var(--app-text-muted)' }}>按 Root Dir 过滤</Typography.Text>
@@ -246,13 +315,7 @@ export function FunctionIndexBrowser(props: Props) {
               })
             }
           })}
-          pagination={{
-            current: page,
-            pageSize,
-            total,
-            showSizeChanger: false,
-            onChange: (p) => setPage(p)
-          }}
+          pagination={false}
         />
         <Typography.Text style={{ color: 'var(--app-text-muted)' }}>
           点击行可打开详情（查看源码、编辑保存、测试入口）。

@@ -150,11 +150,25 @@ if (!$files -or $files.Count -eq 0) {
   exit 1
 }
 
-$cmake = Find-Command 'cmake'
-if ($cmake -and (Test-Path (Join-Path $root 'CMakeLists.txt'))) {
+$cmakeExe = $null
+$cmakeCmd = Find-Command 'cmake'
+if ($cmakeCmd) { $cmakeExe = 'cmake' }
+if (!$cmakeExe) {
+  $candidates = @()
+  if ($env:ProgramFiles) { $candidates += (Join-Path $env:ProgramFiles 'CMake\bin\cmake.exe') }
+  if (${env:ProgramFiles(x86)}) { $candidates += (Join-Path ${env:ProgramFiles(x86)} 'CMake\bin\cmake.exe') }
+  foreach ($p in $candidates) {
+    if ($p -and (Test-Path $p)) {
+      $env:Path = (Split-Path -Parent $p) + ';' + $env:Path
+      $cmakeExe = $p
+      break
+    }
+  }
+}
+if ($cmakeExe -and (Test-Path (Join-Path $root 'CMakeLists.txt'))) {
   Write-Host '[compile] using cmake'
-  cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-  cmake --build build --config Release
+  & $cmakeExe -S . -B build -DCMAKE_BUILD_TYPE=Release
+  & $cmakeExe --build build --config Release
   exit 0
 }
 

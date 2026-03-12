@@ -727,6 +727,47 @@ class RagService:
         ok = kind_job_registry.cancel(job_id)
         return {'ok': bool(ok)}
 
+    def repair_module_from_path(self, *, root_dir: str | None = None) -> dict:
+        def _guess_module(fp: str) -> str:
+            s = str(fp or '').lower().replace('/', '\\')
+            if '\\control\\' in s:
+                return 'control'
+            if '\\decision\\' in s:
+                return 'decision'
+            if '\\localization\\' in s:
+                return 'localization'
+            if '\\perception\\' in s:
+                return 'perception'
+            if '\\planning\\' in s:
+                return 'planning'
+            return ''
+
+        updated = 0
+        offset = 0
+        limit = 2000
+        root = str(Path(root_dir).resolve()) if root_dir else None
+        while True:
+            page = self._store.list_functions_for_module_repair(root_dir=root, limit=limit, offset=offset)
+            items = page.get('items') or []
+            if not items:
+                break
+            for it in items:
+                fid = str(it.get('function_id') or '').strip()
+                fp = str(it.get('file_path') or '')
+                if not fid:
+                    continue
+                m = _guess_module(fp)
+                if not m:
+                    continue
+                ok = self._store.update_function_docs(function_id=fid, module=m, module_source='path', reset_embedding=False)
+                if ok:
+                    updated += 1
+            offset += len(items)
+            if offset >= int(page.get('total') or offset):
+                break
+
+        return {'ok': True, 'updated': int(updated)}
+
     def _run_kind_job(self, *, job_id: str) -> None:
         job = kind_job_registry.get(job_id)
         if not job:

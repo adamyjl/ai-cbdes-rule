@@ -90,6 +90,34 @@ function Resolve-GitExe() {
   throw 'missing command: git'
 }
 
+function Ensure-CMake() {
+  $cmd = Get-Command cmake -ErrorAction SilentlyContinue
+  if ($cmd -and $cmd.Source) {
+    Write-Info "cmake OK: $($cmd.Source)"
+    return
+  }
+
+  Write-Info 'cmake missing. gate compile may fail. trying to install via winget...'
+  $winget = Get-Command winget -ErrorAction SilentlyContinue
+  if ($winget -and $winget.Source) {
+    try {
+      & $winget.Source install --id Kitware.CMake -e --source winget --accept-package-agreements --accept-source-agreements | Out-Null
+    } catch {
+      Write-Info "winget install cmake failed: $($_.Exception.Message)"
+    }
+  } else {
+    Write-Info 'winget not found. please install CMake manually and ensure cmake.exe is in PATH (Machine scope) for the service.'
+    return
+  }
+
+  $cmd2 = Get-Command cmake -ErrorAction SilentlyContinue
+  if ($cmd2 -and $cmd2.Source) {
+    Write-Info "cmake installed: $($cmd2.Source)"
+  } else {
+    Write-Info 'cmake still missing after winget. please install CMake manually and restart ai-cbdes-fastapi service.'
+  }
+}
+
 function Write-Info($msg) {
   Write-Host "[deploy] $msg"
 }
@@ -366,6 +394,8 @@ $gitExe = Resolve-GitExe
 $pythonExe = Resolve-PythonExe
 $nodeExe = Resolve-NodeExe
 $npmCmd = Resolve-NpmCmd
+
+Ensure-CMake
 
 $venvDir = Join-Path $AppDir '.venv'
 $venvPython = Ensure-PythonVenv $venvDir

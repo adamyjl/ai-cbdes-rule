@@ -1,7 +1,6 @@
 import { PageScaffold } from '../PageScaffold'
-import { Button, Card, Form, Input, InputNumber, Progress, Select, Space, Switch, Table, Typography, message } from 'antd'
-import { useMemo, useRef, useState } from 'react'
-import type { RagQueryHit } from '../../utils/api'
+import { Button, Card, Form, Input, Progress, Space, Switch, Typography, message } from 'antd'
+import { useRef, useState } from 'react'
 import type { RagIndexJobStatus } from '../../utils/api'
 import type { RagBackfillDocsJob } from '../../utils/api'
 import type { RagModuleIndexJobStatus } from '../../utils/api'
@@ -14,7 +13,6 @@ import {
   ragGetKindJob,
   ragGetIndexJob,
   ragGetModuleIndexJob,
-  ragQuery,
   ragScan,
   ragStartModuleIndexJob,
   ragStartBackfillDocsJob,
@@ -22,7 +20,6 @@ import {
   ragStartIndexJob,
   ragUploadCodeFiles
 } from '../../utils/api'
-import { archiveAppend } from '../../utils/api'
 import { FunctionDetailDrawer } from '../../components/rag/FunctionDetailDrawer'
 import { FunctionIndexBrowser } from '../../components/rag/FunctionIndexBrowser'
 import { ModuleDetailDrawer } from '../../components/rag/ModuleDetailDrawer'
@@ -37,11 +34,7 @@ export function RagManagementPage() {
   const [uploadId, setUploadId] = useState<string | undefined>(undefined)
   const [uploadTotalFiles, setUploadTotalFiles] = useState(0)
   const [uploadDoneFiles, setUploadDoneFiles] = useState(0)
-  const [query, setQuery] = useState('')
-  const [topK, setTopK] = useState(5)
   const [busy, setBusy] = useState(false)
-  const [hits, setHits] = useState<RagQueryHit[]>([])
-  const [module, setModule] = useState<string | undefined>(undefined)
   const [enrich, setEnrich] = useState(true)
   const [browserRefreshToken, setBrowserRefreshToken] = useState(0)
   const [indexJobId, setIndexJobId] = useState<string | null>(null)
@@ -63,23 +56,6 @@ export function RagManagementPage() {
   const [kindJobId, setKindJobId] = useState<string | null>(null)
   const [kindJob, setKindJob] = useState<RagKindJobStatus | null>(null)
   const [kindPolling, setKindPolling] = useState(false)
-
-  const columns = useMemo(
-    () =>
-      [
-        { title: '函数 ID', dataIndex: 'function_id', key: 'function_id' },
-        { title: '名称', dataIndex: 'name', key: 'name' },
-        { title: '模块', dataIndex: 'module', key: 'module' },
-        { title: '文件', dataIndex: 'file_path', key: 'file_path', ellipsis: true },
-        {
-          title: '相似度',
-          dataIndex: 'score',
-          key: 'score',
-          render: (v: number) => <span>{Number.isFinite(v) ? v.toFixed(3) : '-'}</span>
-        }
-      ] as const,
-    []
-  )
 
   function pickLocalFolder() {
     folderInputRef.current?.click()
@@ -416,29 +392,6 @@ export function RagManagementPage() {
     }
   }
 
-  async function runQuery() {
-    setBusy(true)
-    try {
-      const res = await ragQuery(query, topK, module)
-      setHits(res.hits)
-      try {
-        await archiveAppend('rag.query', {
-          root_dir: rootDir,
-          query,
-          top_k: topK,
-          module: module || null,
-          hits: res.hits
-        })
-      } catch {
-      }
-      message.success(`命中：${res.hits.length} 条`)
-    } catch (e) {
-      message.error(e instanceof Error ? e.message : '检索失败')
-    } finally {
-      setBusy(false)
-    }
-  }
-
   async function openFunctionById(function_id: string) {
     setSelectedFunctionId(function_id)
     setDrawerOpen(true)
@@ -703,72 +656,6 @@ export function RagManagementPage() {
               void openModuleByKey(m.module_key)
             }}
           />
-        </div>
-      </div>
-
-      <div className="md:col-span-4">
-        <div className="space-y-4">
-          <Card
-            title="相似度检索"
-            size="small"
-            bordered={false}
-            style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}
-          >
-            <Form layout="vertical">
-              <Form.Item label="模块过滤（可选）">
-                <Select
-                  allowClear
-                  value={module}
-                  onChange={(v) => setModule(v)}
-                  options={[
-                    { value: 'common', label: 'common' },
-                    { value: 'perception', label: 'perception' },
-                    { value: 'planning', label: 'planning' },
-                    { value: 'decision', label: 'decision' },
-                    { value: 'localization', label: 'localization' },
-                    { value: 'control', label: 'control' }
-                  ]}
-                />
-              </Form.Item>
-              <Form.Item label="Query" required>
-                <Input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="例如：规划模块 速度规划 轨迹平滑"
-                />
-              </Form.Item>
-              <Form.Item label="TopK">
-                <InputNumber min={1} max={50} value={topK} onChange={(v) => setTopK(Number(v ?? 5))} />
-              </Form.Item>
-              <Space wrap>
-                <Button type="primary" onClick={runQuery} disabled={!query} loading={busy}>
-                  检索
-                </Button>
-                <Button onClick={() => setHits([])} disabled={hits.length === 0}>
-                  清空
-                </Button>
-              </Space>
-            </Form>
-          </Card>
-
-          <Card
-            title="命中列表"
-            size="small"
-            bordered={false}
-            style={{ background: 'var(--panel-bg)', border: '1px solid var(--panel-border)' }}
-          >
-            <Table
-              size="small"
-              className="light-table"
-              rowKey="function_id"
-              columns={columns as any}
-              dataSource={hits}
-              onRow={(record) => ({
-                onClick: () => void openFunctionById(record.function_id)
-              })}
-              pagination={{ pageSize: 6 }}
-            />
-          </Card>
         </div>
       </div>
 

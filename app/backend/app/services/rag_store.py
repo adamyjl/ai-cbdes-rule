@@ -506,6 +506,35 @@ class RagStore:
             'offset': offset,
         }
 
+    def list_functions_for_module_repair(self, *, root_dir: str | None = None, limit: int = 1000, offset: int = 0) -> dict[str, Any]:
+        where: list[str] = []
+        params: list[Any] = []
+        if root_dir:
+            where.append('file_path LIKE ?')
+            params.append(f"{str(Path(root_dir).resolve())}%")
+        where.append("(module IS NULL OR module='' OR module='common' OR module='unknown')")
+        where_sql = ' WHERE ' + ' AND '.join(where)
+        limit = max(1, min(int(limit), 2000))
+        offset = max(0, int(offset))
+        with self._connect() as conn:
+            total = conn.execute(f"SELECT COUNT(1) AS c FROM functions{where_sql}", tuple(params)).fetchone()[0]
+            rows = conn.execute(
+                f"""
+                SELECT function_id, file_path, module, module_source
+                FROM functions
+                {where_sql}
+                ORDER BY updated_at ASC
+                LIMIT ? OFFSET ?
+                """,
+                tuple(params + [limit, offset]),
+            ).fetchall()
+        return {
+            'total': int(total),
+            'items': [dict(r) for r in rows],
+            'limit': int(limit),
+            'offset': int(offset),
+        }
+
     def list_function_symbol_index(self, *, root_dir: str | None = None) -> dict[str, str]:
         import re
 

@@ -13,16 +13,64 @@ type Props = {
 export function ModuleIndexBrowser(props: Props) {
   const [busy, setBusy] = useState(false)
   const [q, setQ] = useState('')
-  const [page, setPage] = useState(1)
   const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([])
   const [data, setData] = useState<RagIndexedModulesResponse | null>(null)
-  const pageSize = 50
+  const pageChunk = 1000
+
+  const cacheKey = useMemo(() => {
+    const scope = props.rootDir ? `root:${props.rootDir}` : 'all'
+    return `ragmgmt:mods:v1:${scope}`
+  }, [props.rootDir])
+
+  const readCache = (): { total: number; items: RagIndexedModuleItem[] } | null => {
+    if (q) return null
+    try {
+      const raw = localStorage.getItem(cacheKey)
+      if (!raw) return null
+      const obj = JSON.parse(raw)
+      const total = Number(obj?.total ?? 0)
+      const items = Array.isArray(obj?.items) ? (obj.items as RagIndexedModuleItem[]) : []
+      if (!Number.isFinite(total) || total <= 0) return null
+      return { total, items }
+    } catch {
+      return null
+    }
+  }
+
+  const writeCache = (payload: { total: number; items: RagIndexedModuleItem[] }) => {
+    try {
+      localStorage.setItem(cacheKey, JSON.stringify({ ...payload, savedAt: Date.now() }))
+    } catch {
+    }
+  }
+
+  const loadAll = async () => {
+    let offset = 0
+    const items: RagIndexedModuleItem[] = []
+    for (let i = 0; i < 80; i += 1) {
+      const res = await ragListIndexedModules({ root_dir: props.rootDir, q: q || undefined, limit: pageChunk, offset })
+      const got = Array.isArray(res.items) ? res.items : []
+      items.push(...got)
+      if (items.length >= Number(res.total || items.length)) break
+      if (!got.length) break
+      offset += got.length
+    }
+    return items
+  }
 
   async function load() {
     setBusy(true)
     try {
-      const res = await ragListIndexedModules({ root_dir: props.rootDir, q: q || undefined, limit: pageSize, offset: (page - 1) * pageSize })
-      setData(res)
+      const cached = readCache()
+      if (cached) {
+        setData({ total: cached.total, limit: cached.total, offset: 0, items: cached.items })
+        const head = await ragListIndexedModules({ root_dir: props.rootDir, limit: 1, offset: 0 })
+        if (Number(head.total) === Number(cached.total)) return
+      }
+
+      const items = await loadAll()
+      setData({ total: items.length, limit: items.length, offset: 0, items })
+      if (!q) writeCache({ total: items.length, items })
     } catch (e) {
       message.error(e instanceof Error ? e.message : '加载模块失败')
     } finally {
@@ -35,12 +83,8 @@ export function ModuleIndexBrowser(props: Props) {
   }, [props.refreshToken])
 
   useEffect(() => {
-    setPage(1)
-  }, [q])
-
-  useEffect(() => {
     void load()
-  }, [q, page])
+  }, [q])
 
   async function deleteSelected(keys: string[]) {
     if (!keys.length) return
@@ -177,7 +221,7 @@ export function ModuleIndexBrowser(props: Props) {
               props.onOpenModule({ module_key: record.module_key })
             }
           })}
-          pagination={{ current: page, pageSize, total, onChange: (p) => setPage(p), showSizeChanger: false }}
+          pagination={false}
         />
       </div>
     </Card>

@@ -148,6 +148,15 @@ def cancel_kind_job(job_id: str):
     return rag_service.cancel_kind_job(job_id)
 
 
+class RepairModuleRequest(BaseModel):
+    root_dir: str | None = None
+
+
+@router.post('/repair-module-from-path')
+def repair_module_from_path(req: RepairModuleRequest):
+    return rag_service.repair_module_from_path(root_dir=req.root_dir)
+
+
 class PublishModuleRequest(BaseModel):
     root_dir: str
     graph: dict

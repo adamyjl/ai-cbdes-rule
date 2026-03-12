@@ -19,6 +19,7 @@
  */
 
 #include <cmath>
+#include <cstdio>
 #include "funCalculateDistance.h"
 
 /**
@@ -65,10 +66,10 @@ int main() {
 
     if (status == 0) {
         // 打印计算结果
-        printf("The distance between points is: %f\n", distance);
+        std::printf("The distance between points is: %f\n", distance);
     } else {
         // 打印错误信息
-        printf("Error: Invalid input parameters.\n");
+        std::printf("Error: Invalid input parameters.\n");
     }
 
     return 0;
