@@ -470,9 +470,9 @@ class RagStore:
             where.append("kind = ?")
             params.append(kind)
         if q:
-            where.append("(display_name LIKE ? OR signature LIKE ? OR file_path LIKE ?)")
+            where.append("(display_name LIKE ? OR signature LIKE ? OR file_path LIKE ? OR module LIKE ? OR function_id LIKE ? OR doc_zh LIKE ? OR doc_en LIKE ?)")
             pat = f"%{q}%"
-            params.extend([pat, pat, pat])
+            params.extend([pat, pat, pat, pat, pat, pat, pat])
 
         where_sql = (" WHERE " + " AND ".join(where)) if where else ""
         limit = max(1, min(int(limit), 1000))
@@ -755,9 +755,9 @@ class RagStore:
             where.append('root_dir = ?')
             params.append(str(Path(root_dir).resolve()))
         if q:
-            where.append('(module_key LIKE ? OR display_name LIKE ?)')
+            where.append('(module_key LIKE ? OR display_name LIKE ? OR doc_zh LIKE ? OR doc_en LIKE ?)')
             pat = f"%{q}%"
-            params.extend([pat, pat])
+            params.extend([pat, pat, pat, pat])
         where_sql = (' WHERE ' + ' AND '.join(where)) if where else ''
         limit = max(1, min(int(limit), 1000))
         offset = max(0, int(offset))

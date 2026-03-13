@@ -10,14 +10,14 @@ const menuData: Record<string, string[]> = {
   '构建': ['构建工程', '清理构建', '构建设置', '查看构建日志'],
   '部署': ['部署到本地', '部署到远程', '部署配置', '查看部署状态'],
   '运行': ['运行工程', '调试运行', '停止运行', '运行配置'],
-  '调测工具': ['性能分析', '内存监控', '网络抓包', '日志分析'],
+  '调测工具': ['性能分析', '内存监控', '网络抓包', '日志分析', 'diff'],
   '视图管理': ['重置视图', '显示/隐藏侧边栏', '全屏模式', '切换主题'],
   '组件库管理': ['导入组件', '导出组件', '组件版本管理', '组件依赖分析'],
   '配置管理': ['工程配置', '环境配置', '用户配置', '快捷键设置'],
   '设置': ['通用设置', '外观设置', '编辑器设置', '关于']
 };
 
-export default function TopBar() {
+export default function TopBar(props: { onMenuAction?: (menuName: string, item: string) => void }) {
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -57,7 +57,7 @@ export default function TopBar() {
                     key={index} 
                     className="px-4 py-2 hover:bg-[#F3E5F5] hover:text-[#6A1B9A] cursor-pointer text-xs flex items-center justify-between group"
                     onClick={() => {
-                      console.log(`Clicked ${menuName} -> ${item}`);
+                      props.onMenuAction?.(menuName, item);
                       setActiveMenu(null);
                     }}
                   >

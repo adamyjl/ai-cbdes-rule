@@ -8,6 +8,7 @@ import Toolbar from './components/Layout/Toolbar';
 import Workspace, { PipelineStep } from './components/Layout/Workspace';
 import CodeManagementPanel from './components/Layout/CodeManagementPanel';
 import ReuseModulePanel from './components/Layout/ReuseModulePanel';
+import { DiffOverlay, loadDiffSnapshot, saveDiffSnapshot, type DiffSnapshot } from './components/DiffOverlay';
 import { useEffect, useState } from 'react';
 import {
   gateGetJob,
@@ -99,6 +100,150 @@ function sanitizeCnDisplayName(v: string) {
   return s;
 }
 
+function parseMarkdownCodeFiles(raw: string) {
+  const s = String(raw || '').replace(/\r\n/g, '\n');
+  const lines = s.split('\n');
+  const files: Array<{ name: string; lang: string; content: string }> = [];
+
+  const stripCommentPrefix = (line: string) => {
+    const t = String(line || '');
+    return t.replace(/^\s*\/\/\s*/, '');
+  };
+
+  const isLikelyFilename = (t: string) => {
+    const x = String(t || '').trim();
+    if (!x) return false;
+    if (x.length > 160) return false;
+    if (!/\.(h|hpp|hh|hxx|c|cc|cpp|cxx)\b/i.test(x)) return false;
+    return true;
+  };
+
+  const findFilenameNearLine = (idx: number) => {
+    for (let k = idx; k >= 0 && k >= idx - 6; k -= 1) {
+      const t = stripCommentPrefix(String(lines[k] || '')).trim();
+      if (!t) continue;
+      const m1 = t.match(/^#{1,6}\s*([^\s].*\.(?:h|hpp|hh|hxx|c|cc|cpp|cxx))\s*$/i);
+      if (m1 && m1[1] && isLikelyFilename(m1[1])) return String(m1[1]).trim();
+      const m2 = t.match(/^(?:File\s*:\s*|文件\s*[:：]\s*)([^\s].*\.(?:h|hpp|hh|hxx|c|cc|cpp|cxx))\s*$/i);
+      if (m2 && m2[1] && isLikelyFilename(m2[1])) return String(m2[1]).trim();
+      const m3 = t.match(/^([^\s].*\.(?:h|hpp|hh|hxx|c|cc|cpp|cxx))\s*$/i);
+      if (m3 && m3[1] && isLikelyFilename(m3[1])) return String(m3[1]).trim();
+    }
+    return '';
+  };
+
+  const fenceStartRe = /^\s*(?:\/\/\s*)?```\s*([a-zA-Z0-9_+\-]*)\s*$/;
+  for (let i = 0; i < lines.length; i += 1) {
+    const m = String(lines[i] || '').match(fenceStartRe);
+    if (!m) continue;
+    const lang = String(m[1] || '').trim();
+    let j = i + 1;
+    for (; j < lines.length; j += 1) {
+      if (/^\s*(?:\/\/\s*)?```\s*$/.test(String(lines[j] || ''))) break;
+    }
+    if (j >= lines.length) break;
+    const content = lines.slice(i + 1, j).join('\n').trimEnd();
+    const filename = findFilenameNearLine(i - 1);
+    if (filename) files.push({ name: filename, lang, content });
+    i = j;
+  }
+  return files;
+}
+
+function buildMultiFileMarkdown(files: Array<{ name: string; lang?: string; content: string }>) {
+  return files
+    .map((f) => {
+      const name = String(f.name || '').trim();
+      const lang = String(f.lang || '').trim() || 'cpp';
+      const content = String(f.content || '').replace(/\r\n/g, '\n').trimEnd();
+      return `//### ${name}\n\n//\`\`\`${lang}\n${content}\n//\`\`\`\n\n`;
+    })
+    .join('')
+    .trim();
+}
+
+function normalizeGeneratedCodePayload(raw: string) {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+  const files = parseMarkdownCodeFiles(s);
+  if (files.length) return buildMultiFileMarkdown(files);
+  return s;
+}
+
+function pickCppFromPayload(raw: string) {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+  const files = parseMarkdownCodeFiles(s);
+  const cpp = files.find((f) => /\.(cpp|cc|cxx|c)\b/i.test(String(f.name || '')));
+  if (cpp) return String(cpp.content || '').trim();
+  return s;
+}
+
+function ensureHeaderAndCpp(raw: string, opts: { baseName: string }) {
+  const s = String(raw || '').trim();
+  const base = String(opts.baseName || '').trim() || 'gen';
+  const files = parseMarkdownCodeFiles(s);
+  if (!files.length) return s;
+
+  const hasCpp = files.some((f) => /\.(cpp|cc|cxx|c)\b/i.test(String(f.name || '')));
+  const hasH = files.some((f) => /\.(h|hpp|hh|hxx)\b/i.test(String(f.name || '')));
+  if (hasCpp || !hasH) return s;
+
+  const header = files.find((f) => /\.(h|hpp|hh|hxx)\b/i.test(String(f.name || '')));
+  if (!header) return s;
+  const headerText = String(header.content || '');
+  const fnName = base;
+
+  const m = headerText.match(new RegExp(`\\b${fnName}\\s*\\([^)]*\\)\\s*\\{`, 'm'));
+  if (!m || m.index == null) return s;
+  const start = m.index;
+  const braceStart = headerText.indexOf('{', start);
+  if (braceStart < 0) return s;
+  let depth = 0;
+  let end = -1;
+  for (let i = braceStart; i < headerText.length; i += 1) {
+    const ch = headerText[i];
+    if (ch === '{') depth += 1;
+    else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        end = i + 1;
+        break;
+      }
+    }
+  }
+  if (end < 0) return s;
+
+  const defBlock = headerText.slice(start, end).trim();
+  const declHead = defBlock.split('{')[0].trim().replace(/\s+/g, ' ');
+  const decl = `${declHead};`;
+  const newHeaderContent = (headerText.slice(0, start) + decl + headerText.slice(end)).trimEnd();
+  const headerName = `${base}.h`;
+  const srcContent = `#include "${headerName}"\n\n${defBlock}\n`;
+
+  return buildMultiFileMarkdown([
+    { name: headerName, lang: 'cpp', content: newHeaderContent },
+    { name: `${base}.cpp`, lang: 'cpp', content: srcContent.trimEnd() }
+  ]);
+}
+
+function commentMarkdownMarkers(text: string) {
+  const s = String(text || '').replace(/\r\n/g, '\n');
+  if (!s.trim()) return '';
+  const lines = s.split('\n');
+  const out = lines.map((line) => {
+    const t = String(line || '');
+    const trimmed = t.trimStart();
+    if (trimmed.startsWith('```') || trimmed.startsWith('###')) {
+      const already = trimmed.startsWith('//');
+      if (already) return t;
+      return `//${t}`;
+    }
+    return t;
+  });
+  return out.join('\n');
+}
+
 function extractCnNameFromCode(code: string) {
   const s = String(code || '');
   const m = s.match(/@cn_name\s+([^\n\r]+)/);
@@ -161,6 +306,53 @@ function validateGeneratedFunctionCode(code: string) {
   return { ok: true, reason: '' };
 }
 
+function ensureDoxygenFieldsInFunctionCode(code: string, p: { cnName: string; enName: string }) {
+  const s = String(code || '').replace(/\r\n/g, '\n');
+  if (!s.trim()) return s;
+  const cn = sanitizeCnDisplayName(String(p.cnName || '').trim()) || '新函数';
+  const en = String(p.enName || '').trim() || 'newFunction';
+
+  const hasBrief = /@brief\b/i.test(s);
+  const hasCn = /@cn_name\b/i.test(s);
+  const hasEn = /@en_name\b/i.test(s);
+  if (hasBrief && hasCn && hasEn) return s;
+
+  const injectLines = (comment: string) => {
+    const lines = comment.replace(/\r\n/g, '\n').split('\n');
+    const out: string[] = [];
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i];
+      if (/\*\/\s*$/.test(line)) {
+        if (!hasBrief) out.push(` * @brief ${cn}`);
+        if (!hasEn) out.push(` * @en_name ${en}`);
+        if (!hasCn) out.push(` * @cn_name ${cn}`);
+        out.push(line);
+        out.push(...lines.slice(i + 1));
+        return out.join('\n');
+      }
+      out.push(line);
+    }
+    return comment;
+  };
+
+  const doxygenRe = /\/\*\*[\s\S]*?\*\//;
+  const m = s.match(doxygenRe);
+  if (m && m.index != null) {
+    const patched = injectLines(String(m[0]));
+    return s.slice(0, m.index) + patched + s.slice(m.index + String(m[0]).length);
+  }
+
+  const funcRe = /(^|\n)\s*(?:static\s+)?[^\n;{}]+\([^;{}]*\)\s*\{/;
+  const fm = s.match(funcRe);
+  if (fm && fm.index != null) {
+    const idx = fm.index + (fm[1] ? fm[1].length : 0);
+    const comment = ['/**', ` * @brief ${cn}`, ` * @en_name ${en}`, ` * @cn_name ${cn}`, ' */', ''].join('\n');
+    return s.slice(0, idx) + comment + s.slice(idx);
+  }
+
+  return s;
+}
+
 function loadGeneratedFunctions(projectId: string) {
   return loadJsonFromStorage<Record<string, { display_name: string; signature: string; module: string; doc_zh: string; doc_en?: string; code: string }>>(
     `${GENERATED_FUNCTIONS_KEY_PREFIX}${projectId}`,
@@ -206,6 +398,21 @@ export default function App() {
   const [aiEditSummary, setAiEditSummary] = useState('');
   const [scanManagerOpen, setScanManagerOpen] = useState(false);
   const [reuseManagerOpen, setReuseManagerOpen] = useState(false);
+  const [diffOpen, setDiffOpen] = useState(false);
+  const [diffSnapshot, setDiffSnapshot] = useState<DiffSnapshot | null>(() => loadDiffSnapshot());
+
+  const openDiffOverlay = (s?: DiffSnapshot | null) => {
+    const next = s ?? loadDiffSnapshot();
+    setDiffSnapshot(next);
+    setDiffOpen(true);
+  };
+
+  const commitDiffSnapshot = (p: { oldCode: string; newCode: string; source: string }) => {
+    const s: DiffSnapshot = { ts: Date.now(), source: p.source, old_code: p.oldCode, new_code: p.newCode };
+    saveDiffSnapshot(s);
+    setDiffSnapshot(s);
+    setDiffOpen(true);
+  };
   const [injectReusePayload, setInjectReusePayload] = useState<{ functions: any[]; modules: any[] } | null>(null);
   const [injectReuseSignal, setInjectReuseSignal] = useState(0);
   const [saveCanvasSignal, setSaveCanvasSignal] = useState(0);
@@ -220,6 +427,13 @@ export default function App() {
   const [qaRisk, setQaRisk] = useState('');
   const [qaAmbiguity, setQaAmbiguity] = useState('');
   const [qaMissing, setQaMissing] = useState('');
+  const [qaPrefill, setQaPrefill] = useState<{
+    goal: string;
+    constraints: string;
+    subtasks: string;
+    risk_items: string[];
+    missing_items: string[];
+  } | null>(null);
   const [qaBusy, setQaBusy] = useState(false);
   const [generationMode, setGenerationMode] = useState<'canvas' | 'analyze' | 'new_function' | 'new_module' | 'reuse'>('canvas');
   const [qaAutoOpenSignal, setQaAutoOpenSignal] = useState(0);
@@ -230,6 +444,30 @@ export default function App() {
   const [generatedModules, setGeneratedModules] = useState<Record<string, { module_key: string; display_name: string; doc_zh: string; nodes: any[]; edges: any[] }>>(
     {}
   );
+
+  const upsertGeneratedFunction = (fn: {
+    function_id: string;
+    display_name: string;
+    signature: string;
+    module: string;
+    doc_zh: string;
+    doc_en?: string;
+    code: string;
+  }) => {
+    const fid = String(fn.function_id || '').trim();
+    if (!fid) return;
+    setGeneratedFunctions((prev) => ({
+      ...(prev || {}),
+      [fid]: {
+        display_name: String(fn.display_name || fid),
+        signature: String(fn.signature || ''),
+        module: String(fn.module || 'common'),
+        doc_zh: String(fn.doc_zh || ''),
+        doc_en: String(fn.doc_en || ''),
+        code: String(fn.code || '')
+      }
+    }));
+  };
 
   useEffect(() => {
     if (!projectId) return;
@@ -382,6 +620,32 @@ export default function App() {
   };
 
   const doOpenProject = () => {
+    const applyImportedProjectData = (data: any, fileName?: string) => {
+      const version = Number(data?.version || 0);
+      const canvas = data?.canvas;
+      const nodes = canvas?.nodes;
+      const edges = canvas?.edges;
+      if (version !== 1 || !canvas || !Array.isArray(nodes) || !Array.isArray(edges)) {
+        appendLog('导入失败：工程文件格式不正确（version/canvas/nodes/edges）');
+        alert('导入失败：工程文件格式不正确（version/canvas/nodes/edges）');
+        return false;
+      }
+
+      const canvasId = String(canvas?.id || `import_${Date.now()}`);
+      const canvasName = String(canvas?.name || '导入画布');
+      const fixedNodes = nodes.map((n: any) => ({ ...n, canvasId }));
+      const fixedEdges = edges.map((e: any) => ({ ...e, canvasId }));
+      setImportGraphPayload({ canvases: [{ id: canvasId, name: canvasName }], activeCanvasId: canvasId, nodes: fixedNodes, edges: fixedEdges });
+      setImportGraphSignal((v) => v + 1);
+
+      const importedRoot = String(data?.rootDir || '').trim();
+      if (importedRoot) setRootDir(importedRoot);
+      if (data?.meta?.projectId) setProjectId(String(data.meta.projectId));
+      if (data?.meta?.projectName) setProjectName(String(data.meta.projectName));
+      appendLog(`工程文件已导入：${String(fileName || 'unknown')}`);
+      return true;
+    };
+
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.json,application/json';
@@ -404,29 +668,183 @@ export default function App() {
         return;
       }
 
-      const version = Number(data?.version || 0);
-      const canvas = data?.canvas;
-      const nodes = canvas?.nodes;
-      const edges = canvas?.edges;
-      if (version !== 1 || !canvas || !Array.isArray(nodes) || !Array.isArray(edges)) {
-        appendLog('导入失败：工程文件格式不正确（version/canvas/nodes/edges）');
-        alert('导入失败：工程文件格式不正确（version/canvas/nodes/edges）');
-        return;
-      }
-
-      const canvasId = String(canvas?.id || `import_${Date.now()}`);
-      const canvasName = String(canvas?.name || '导入画布');
-      const fixedNodes = nodes.map((n: any) => ({ ...n, canvasId }));
-      const fixedEdges = edges.map((e: any) => ({ ...e, canvasId }));
-      setImportGraphPayload({ canvases: [{ id: canvasId, name: canvasName }], activeCanvasId: canvasId, nodes: fixedNodes, edges: fixedEdges });
-      setImportGraphSignal((v) => v + 1);
-
-      const importedRoot = String(data?.rootDir || '').trim();
-      if (importedRoot) setRootDir(importedRoot);
-      appendLog(`工程文件已导入：${f.name}`);
+      applyImportedProjectData(data, f.name);
     };
     input.click();
   };
+
+  useEffect(() => {
+    try {
+      const qs = new URLSearchParams(window.location.search);
+      if (qs.get('selftestPanZoom') !== '1') return;
+      console.info('[gaasd selftest] start');
+      const sample = {
+        version: 1,
+        meta: {
+          userName: '1',
+          projectId: 'prj_1773109528887',
+          projectName: '默认工程',
+          savedAt: '2026-03-13T14:40:18.069Z'
+        },
+        rootDir: 'data\\THICV-Pilot_master',
+        canvas: {
+          id: 'a2zqt02hq',
+          name: 'map0312_1',
+          nodes: [
+            {
+              id: '3xsn8ikk',
+              canvasId: 'a2zqt02hq',
+              kind: 'function',
+              status: 'clean',
+              functionId:
+                'cpp::C:\\srv\\ai-cbdes-rule\\app\\data\\THICV-Pilot_master\\Perception\\Camera\\DynamicObjectDetection\\DynamicObjectDetectionDL\\VehiclePedestrianCyclistDetection\\dependence\\smoke.hh::log::14-39',
+              displayName: 'log',
+              module: 'perception',
+              signature: 'void log(Severity severity, const char *msg) noexcept {',
+              inputsJson: '{}',
+              outputsJson: '{}',
+              x: 216.09375,
+              y: 250
+            }
+          ],
+          edges: []
+        }
+      };
+
+      const importOk = (() => {
+        const version = Number((sample as any)?.version || 0);
+        const canvas = (sample as any)?.canvas;
+        const nodes = canvas?.nodes;
+        const edges = canvas?.edges;
+        if (version !== 1 || !canvas || !Array.isArray(nodes) || !Array.isArray(edges)) return false;
+        const canvasId = String(canvas?.id || `import_${Date.now()}`);
+        const canvasName = String(canvas?.name || '导入画布');
+        const fixedNodes = nodes.map((n: any) => ({ ...n, canvasId }));
+        const fixedEdges = edges.map((e: any) => ({ ...e, canvasId }));
+        setImportGraphPayload({ canvases: [{ id: canvasId, name: canvasName }], activeCanvasId: canvasId, nodes: fixedNodes, edges: fixedEdges });
+        setImportGraphSignal((v) => v + 1);
+        const importedRoot = String((sample as any)?.rootDir || '').trim();
+        if (importedRoot) setRootDir(importedRoot);
+        setProjectId(String((sample as any).meta.projectId));
+        setProjectName(String((sample as any).meta.projectName));
+        return true;
+      })();
+
+      if (!importOk) {
+        console.error('[gaasd selftest] import failed');
+        return;
+      }
+
+      window.setTimeout(() => {
+        const area = document.querySelector('[data-testid="gaasd-canvas-area"]') as HTMLElement | null;
+        const layer = document.querySelector('[data-testid="gaasd-viewport-layer"]') as HTMLElement | null;
+        if (!area || !layer) {
+          console.error('[gaasd selftest] missing elements', { area: !!area, layer: !!layer });
+          return;
+        }
+
+        const before = String((layer as any).style?.transform || '');
+        const r = area.getBoundingClientRect();
+        const cx = r.left + r.width / 2;
+        const cy = r.top + r.height / 2;
+        const rectInfo = `${Math.round(r.width)}x${Math.round(r.height)}`;
+
+        let zoomViaClick = false;
+        let hasZoomBtn = false;
+        let afterClick = '';
+        try {
+          const btn = document.querySelector('button[title="放大（+）"]') as HTMLButtonElement | null;
+          if (btn) {
+            hasZoomBtn = true;
+            btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+            zoomViaClick = true;
+            afterClick = String((layer as any).style?.transform || '');
+          }
+        } catch (e) {
+          console.error('[gaasd selftest] click zoom dispatch failed', e);
+        }
+
+        let zoomViaWheel = false;
+        try {
+          area.dispatchEvent(
+            new WheelEvent('wheel', {
+              bubbles: true,
+              cancelable: true,
+              clientX: cx,
+              clientY: cy,
+              deltaY: -160
+            })
+          );
+          zoomViaWheel = true;
+        } catch (e) {
+          console.error('[gaasd selftest] wheel dispatch failed', e);
+        }
+
+        try {
+          area.dispatchEvent(
+            new PointerEvent('pointerdown', {
+              bubbles: true,
+              cancelable: true,
+              pointerId: 1,
+              buttons: 1,
+              button: 0,
+              clientX: cx,
+              clientY: cy
+            })
+          );
+          window.dispatchEvent(
+            new PointerEvent('pointermove', {
+              bubbles: true,
+              cancelable: true,
+              pointerId: 1,
+              buttons: 1,
+              button: 0,
+              clientX: cx + 80,
+              clientY: cy + 60
+            })
+          );
+          window.dispatchEvent(
+            new PointerEvent('pointerup', {
+              bubbles: true,
+              cancelable: true,
+              pointerId: 1,
+              buttons: 0,
+              button: 0,
+              clientX: cx + 80,
+              clientY: cy + 60
+            })
+          );
+        } catch (e) {
+          console.error('[gaasd selftest] pointer dispatch failed', e);
+        }
+
+        window.setTimeout(() => {
+          const after = String((layer as any).style?.transform || '');
+          const ok = Boolean(before && after && before !== after);
+          const note = ok ? 'ok' : 'failed';
+          const payload = {
+            ok,
+            before,
+            after,
+            note: `${note};rect=${rectInfo};hasZoomBtn=${hasZoomBtn ? 1 : 0};zoomViaClick=${zoomViaClick ? 1 : 0};zoomViaWheel=${zoomViaWheel ? 1 : 0};afterClick=${encodeURIComponent(afterClick)}`,
+            at: new Date().toISOString()
+          };
+          if (ok) console.info('[gaasd selftest] pan/zoom OK', payload);
+          else console.error('[gaasd selftest] pan/zoom FAILED', payload);
+          try {
+            void fetch('/py/debug/selftest/panzoom', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+          } catch {
+          }
+        }, 200);
+      }, 1200);
+    } catch (e) {
+      console.error('[gaasd selftest] unexpected error', e);
+    }
+  }, []);
 
   const runHealthCheck = async () => {
     setBusy(true);
@@ -460,10 +878,13 @@ export default function App() {
   };
 
   const extractFirstCppBlock = (text: string) => {
-    const s = String(text || '');
+    const s = String(text || '').trim();
+    if (!s) return '';
+    const files = parseMarkdownCodeFiles(s);
+    if (files.length) return buildMultiFileMarkdown(files);
     const m = s.match(/```(?:cpp|c\+\+|c)?\s*\n([\s\S]*?)\n```/i);
-    if (m && m[1]) return String(m[1]).trim();
-    return s.trim();
+    if (m && m[0]) return commentMarkdownMarkers(String(m[0]).trim());
+    return commentMarkdownMarkers(s);
   };
 
   const buildCanvasCodeContext = async () => {
@@ -690,8 +1111,15 @@ export default function App() {
     try {
       if (generationMode === 'canvas') {
         appendLog('开始按照画布直接复用生成...');
+        let oldCode = '';
+        try {
+          oldCode = await buildCanvasCodeContext();
+        } catch {
+          oldCode = '';
+        }
         const cpp = await buildDirectReuseCpp();
         setGeneratedCode(cpp);
+        commitDiffSnapshot({ oldCode, newCode: cpp, source: '画布生成' });
         setAiEditSummary(`已按画布直接复用生成，代码长度 ${cpp.length}。`);
         setAiEditApplySignal((v) => v + 1);
         appendLog(`生成成功：代码长度=${cpp.length}`);
@@ -724,35 +1152,85 @@ export default function App() {
           setAiEditFailSignal((v) => v + 1);
           return;
         }
-        const analysisMd = String(res.analysis_markdown || '');
+        const struct = res.analysis_struct;
+        const analysisMdRaw = String(res.analysis_markdown || '').trim();
+        const analysisMd = analysisMdRaw || '';
+        if (!analysisMd && (!struct || (!String(struct.goal || '').trim() && !String(struct.constraints || '').trim() && !String(struct.subtasks || '').trim()))) {
+          appendLog('任务分析失败：后端返回为空（analysis_markdown/analysis_struct）。');
+          setAiEditFailSignal((v) => v + 1);
+          return;
+        }
         setTaskAnalysisResult(analysisMd);
+        if (res.llm_model) appendLog(`任务分析模型：${res.llm_model}`);
+        if (res.debug_id) appendLog(`任务分析调试ID：${res.debug_id}`);
         appendLog('开始从问题分析中提取 QA 清单...');
+
+        if (struct && (String(struct.constraints || '').trim() || String(struct.subtasks || '').trim() || (struct.risk_items || []).length || (struct.missing_items || []).length)) {
+          const riskLines = Array.from(new Set((struct.risk_items || []).map((x) => String(x || '').trim()).filter(Boolean)));
+          const missingLines = Array.from(new Set((struct.missing_items || []).map((x) => String(x || '').trim()).filter(Boolean)));
+          setQaRisk(riskLines.join('\n'));
+          setQaAmbiguity('');
+          setQaMissing(missingLines.join('\n'));
+          setQaPrefill({
+            goal: String(struct.goal || '').trim() || prompt.trim(),
+            constraints: String(struct.constraints || '').trim(),
+            subtasks: String(struct.subtasks || '').trim(),
+            risk_items: riskLines,
+            missing_items: missingLines
+          });
+          const ctx = await buildCanvasCodeContext();
+          setQaCanvasCodeContext(ctx);
+          setQaAutoOpenSignal((v) => v + 1);
+          appendLog('已生成问题分析与 QA 清单，请在 QA 面板逐条确认后生成代码。');
+          setAiEditApplySignal((v) => v + 1);
+          return;
+        }
+
         const md = analysisMd.replace(/\r\n/g, '\n');
-        const pickSection = (title: string) => {
-          const re = new RegExp(`^#{1,6}\\s*${title}\\s*$([\\s\\S]*?)(^#{1,6}\\s|$)`, 'm');
+        const pickMd = (titleRe: string) => {
+          const re = new RegExp(
+            `^\\s*#{1,6}\\s*(?:[\\d一二三四五六七八九十]+[\\.、\)]\\s*)?${titleRe}(?:\\s*[（(].*?[）)])?(?:\\s*[：:])?\\s*$([\\s\\S]*?)(^\\s*#{1,6}\\s|$)`,
+            'm'
+          );
           const m = md.match(re);
           if (!m) return '';
           return String(m[1] || '').trim();
         };
-        const riskBlock = pickSection('风险点/歧义点') || pickSection('风险点') || '';
-        const missingBlock = pickSection('缺失信息清单') || pickSection('缺失信息') || '';
-        const riskLines = riskBlock
-          .split('\n')
-          .map((x) => x.trim())
-          .filter(Boolean)
-          .filter((x) => /^[-*\d.、]/.test(x))
-          .map((x) => x.replace(/^[-*\d.、\s]+/, '').trim())
-          .filter(Boolean);
-        const missingLines = missingBlock
-          .split('\n')
-          .map((x) => x.trim())
-          .filter(Boolean)
-          .filter((x) => /^[-*\d.、]/.test(x))
-          .map((x) => x.replace(/^[-*\d.、\s]+/, '').trim())
-          .filter(Boolean);
+        const stripList = (line: string) => {
+          let s = String(line || '').trim();
+          if (!s) return '';
+          if (/^#{1,6}\s+/.test(s)) return '';
+          s = s.replace(/^\s*[-*•·–—]\s*(?:\[[ xX]\]\s*)?/, '');
+          s = s.replace(/^\s*(?:\(?\d+\)?[.)、:]|[（(]\d+[）)]|\d+[、.]|\d+\)|[①②③④⑤⑥⑦⑧⑨⑩])\s*/, '');
+          return s.trim();
+        };
+        const parseItems = (block: string) => {
+          const lines = String(block || '')
+            .split('\n')
+            .map(stripList)
+            .filter(Boolean);
+          return Array.from(new Set(lines));
+        };
+
+        const goalBlock = pickMd('任务目标') || pickMd('需求目标') || pickMd('整体描述\\s*\\(goal\\)') || pickMd('整体描述') || '';
+        const constraintsBlock = pickMd('关键约束') || pickMd('约束条件') || '';
+        const subtasksBlock = pickMd('建议拆分的子任务') || pickMd('建议拆分子任务') || pickMd('子任务\\s*\\(subtasks\\)') || pickMd('实现步骤') || '';
+        const riskBlock = pickMd('风险点\\s*/\\s*歧义点') || pickMd('风险点') || pickMd('歧义点') || '';
+        const missingBlock = pickMd('缺失信息清单') || pickMd('缺失信息') || '';
+
+        const riskLines = parseItems(riskBlock);
+        const missingLines = parseItems(missingBlock);
+
         setQaRisk(riskLines.join('\n'));
         setQaAmbiguity('');
         setQaMissing(missingLines.join('\n'));
+        setQaPrefill({
+          goal: goalBlock.trim() || prompt.trim(),
+          constraints: constraintsBlock.trim(),
+          subtasks: subtasksBlock.trim(),
+          risk_items: riskLines,
+          missing_items: missingLines
+        });
         const ctx = await buildCanvasCodeContext();
         setQaCanvasCodeContext(ctx);
         setQaAutoOpenSignal((v) => v + 1);
@@ -806,7 +1284,34 @@ export default function App() {
         };
         let obj: any = tryParseObj(String(r.result));
         let code = obj?.code ? String(obj.code) : extractFirstCppBlock(String(r.result));
-        let v = validateGeneratedFunctionCode(code);
+        const pickImpl = (payload: string) => {
+          const s = String(payload || '').trim();
+          if (!s) return '';
+          const files = parseMarkdownCodeFiles(s);
+          if (files.length) {
+            const cpp = files.find((f) => /\.(cpp|cc|cxx|c)\b/i.test(String(f.name || '')));
+            if (cpp?.content) return String(cpp.content);
+            const h = files.find((f) => /\.(h|hpp|hh|hxx)\b/i.test(String(f.name || '')));
+            if (h?.content) return String(h.content);
+          }
+          const m = s.match(/(?:^|\n)\s*(?:\/\/\s*)?```[a-zA-Z0-9_+\-]*\s*\n([\s\S]*?)\n\s*(?:\/\/\s*)?```\s*(?:\n|$)/);
+          if (m && m[1]) return String(m[1]).trim();
+          return s;
+        };
+        let impl = pickImpl(code);
+        const deriveFnName = (sigLike: string, fallbackCode: string) => {
+          const a = String(sigLike || '').trim();
+          const b = String(fallbackCode || '').trim();
+          const n1 = (a.match(/\b([a-zA-Z][a-zA-Z0-9]*)\s*\(/) || [])[1] || '';
+          if (n1) return n1;
+          const n2 = (b.match(/\b([a-zA-Z][a-zA-Z0-9]*)\s*\(/) || [])[1] || '';
+          if (n2) return n2;
+          return 'newFunction';
+        };
+        const enName = deriveFnName(String(obj?.signature || ''), impl);
+        const cnNameHint = String(obj?.cn_name || obj?.display_name || '').trim();
+        impl = ensureDoxygenFieldsInFunctionCode(impl, { cnName: cnNameHint || deriveDisplayNameFromPrompt(prompt) || '新函数', enName });
+        let v = validateGeneratedFunctionCode(impl);
         if (!v.ok) {
           const retryPrompt = [
             '上一次输出不符合要求，请重试并严格输出 JSON。',
@@ -823,7 +1328,11 @@ export default function App() {
           }
           obj = tryParseObj(String(r.result));
           code = obj?.code ? String(obj.code) : extractFirstCppBlock(String(r.result));
-          v = validateGeneratedFunctionCode(code);
+          impl = pickImpl(code);
+          const en2 = deriveFnName(String(obj?.signature || ''), impl);
+          const cn2 = String(obj?.cn_name || obj?.display_name || '').trim();
+          impl = ensureDoxygenFieldsInFunctionCode(impl, { cnName: cn2 || deriveDisplayNameFromPrompt(prompt) || '新函数', enName: en2 });
+          v = validateGeneratedFunctionCode(impl);
         }
         if (!v.ok) {
           appendLog(`新函数生成失败：${v.reason}`);
@@ -851,7 +1360,7 @@ export default function App() {
         const sig = String(obj?.signature || '');
         const mod = String(obj?.module || 'common');
 
-        const parsed = parseFunctionBlocksFromCode(code);
+        const parsed = parseFunctionBlocksFromCode(impl);
         if (parsed.blocks.length > 1) {
           const moduleKey = `genmod_${Date.now()}`;
           const moduleName = sanitizeCnDisplayName(parsed.blocks[0]?.cn_name || displayName || deriveDisplayNameFromPrompt(prompt) || `新模块_${moduleKey}`);
@@ -861,7 +1370,16 @@ export default function App() {
               const b = parsed.blocks[i];
               const fid = i === 0 ? functionId : `genfn_${Date.now()}_${i}`;
               const dn = sanitizeCnDisplayName(b.cn_name || b.name || moduleName || fid);
-              const full = [parsed.preamble, b.text].filter(Boolean).join('\n\n').trim();
+              const fnName = b.name || (b.signature.match(/\b([a-zA-Z][a-zA-Z0-9]*)\s*\(/) || [])[1] || `fn_${Date.now()}_${i}`;
+              const comment = (b.text.match(/\/\*\*[\s\S]*?\*\//) || [''])[0].trim();
+              const declSig = (b.signature || '').trim();
+              const decl = declSig ? `${declSig.replace(/\s*\{\s*$/, '').trim()};` : '';
+              const h = ['#pragma once', '', comment, decl].filter(Boolean).join('\n').trimEnd();
+              const cpp = [`#include "${fnName}.h"`, '', b.text.trim()].filter(Boolean).join('\n').trimEnd();
+              const full = buildMultiFileMarkdown([
+                { name: `${fnName}.h`, lang: 'cpp', content: h },
+                { name: `${fnName}.cpp`, lang: 'cpp', content: cpp }
+              ]);
               next[fid] = {
                 display_name: dn,
                 signature: b.signature || '',
@@ -902,6 +1420,23 @@ export default function App() {
           return;
         }
 
+        const fnName = (() => {
+          const fromSig = (sig.match(/\b([a-zA-Z][a-zA-Z0-9]*)\s*\(/) || [])[1] || '';
+          if (fromSig) return fromSig;
+          const fromCode = (impl.match(/\b([a-zA-Z][a-zA-Z0-9]*)\s*\(/) || [])[1] || '';
+          if (fromCode) return fromCode;
+          return `gen_${Date.now()}`;
+        })();
+        const comment = (impl.match(/\/\*\*[\s\S]*?\*\//) || [''])[0].trim();
+        const declSig = (sig || parsed.blocks[0]?.signature || '').trim();
+        const decl = declSig ? `${declSig.replace(/\s*\{\s*$/, '').trim()};` : '';
+        const h = ['#pragma once', '', comment, decl].filter(Boolean).join('\n').trimEnd();
+        const cpp = [`#include "${fnName}.h"`, '', impl.trim()].filter(Boolean).join('\n').trimEnd();
+        const full = buildMultiFileMarkdown([
+          { name: `${fnName}.h`, lang: 'cpp', content: h },
+          { name: `${fnName}.cpp`, lang: 'cpp', content: cpp }
+        ]);
+
         setGeneratedFunctions((prev) => ({
           ...prev,
           [functionId]: {
@@ -910,7 +1445,7 @@ export default function App() {
             module: mod,
             doc_zh: String(obj?.doc_zh || ''),
             doc_en: String(obj?.doc_en || ''),
-            code
+            code: full
           }
         }));
         setInjectFunctionPayload({ functionId, displayName, signature: sig, module: mod });
@@ -1037,14 +1572,42 @@ export default function App() {
     setAiEditStartSignal((v) => v + 1);
     appendLog('开始调用编排生成接口...');
     try {
-      const r = await orchestratorGenerate(p);
+      let oldCode = '';
+      try {
+        oldCode = await buildCanvasCodeContext();
+      } catch {
+        oldCode = '';
+      }
+      const needRetry = (text: string) => {
+        const files = parseMarkdownCodeFiles(String(text || ''));
+        if (!files.length) return false;
+        const hasH = files.some((f) => /\.(h|hpp|hh|hxx)\b/i.test(String(f.name || '')));
+        const hasCpp = files.some((f) => /\.(cpp|cc|cxx|c)\b/i.test(String(f.name || '')));
+        return hasH && !hasCpp;
+      };
+
+      let r = await orchestratorGenerate(p);
       if (!r.ok || !r.result) {
         appendLog(`生成失败：${r.error || 'empty result'}`);
         setAiEditFailSignal((v) => v + 1);
         return;
       }
+      if (needRetry(String(r.result))) {
+        appendLog('检测到仅生成头文件，开始自动重试补全 .cpp...');
+        const retryPrompt = [
+          '上一次输出缺少 .cpp 源文件，请重试并严格补全：',
+          '1) 必须同时给出 .h 与 .cpp；',
+          '2) .h 只放声明与必要结构体/宏，函数实现放在 .cpp；',
+          '',
+          p
+        ].join('\n');
+        const r2 = await orchestratorGenerate(retryPrompt);
+        if (r2.ok && r2.result) r = r2;
+      }
+
       const code = extractFirstCppBlock(String(r.result));
       setGeneratedCode(code);
+      commitDiffSnapshot({ oldCode, newCode: code, source: 'QA生成' });
       const briefPrompt = p.replace(/\s+/g, ' ').trim();
       const promptText = briefPrompt.length > 42 ? `${briefPrompt.slice(0, 42)}...` : briefPrompt;
       setAiEditSummary(`已按指令“${promptText || '生成代码'}”完成变更，生成结果长度 ${code.length}。`);
@@ -1328,6 +1891,12 @@ export default function App() {
     appendLog(`开始导出模块：${name} (${moduleKey})`);
 
     try {
+      let oldCode = '';
+      try {
+        oldCode = await buildCanvasCodeContext();
+      } catch {
+        oldCode = '';
+      }
       const upsert = await ragUpsertModule({
         root_dir: rootDir,
         module: {
@@ -1363,7 +1932,9 @@ export default function App() {
         setAiEditFailSignal((v) => v + 1);
         return;
       }
-      setGeneratedCode(r.result);
+      const normalized = commentMarkdownMarkers(normalizeGeneratedCodePayload(String(r.result)));
+      setGeneratedCode(normalized);
+      commitDiffSnapshot({ oldCode, newCode: normalized, source: '导出模块生成' });
       const brief = exportPrompt.replace(/\s+/g, ' ').trim();
       const briefText = brief.length > 42 ? `${brief.slice(0, 42)}...` : brief;
       setAiEditSummary(`已按指令“${briefText || '导出模块'}”完成变更，生成结果长度 ${r.result.length}。`);
@@ -1376,7 +1947,7 @@ export default function App() {
         compile_command: 'AUTO',
         static_command: 'AUTO',
         requirement_prompt: exportPrompt,
-        generated_result: r.result
+        generated_result: normalized
       });
       if (!started.ok || !started.job_id) {
         appendLog(`门禁启动失败：${started.error || 'unknown'}`);
@@ -1474,7 +2045,13 @@ export default function App() {
 
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden bg-white text-[#4A148C]">
-      <TopBar />
+      <TopBar
+        onMenuAction={(menuName, item) => {
+          if (menuName === '调测工具' && item === 'diff') {
+            openDiffOverlay();
+          }
+        }}
+      />
       <Toolbar
         busy={busy}
         backendOk={backendOk}
@@ -1540,6 +2117,7 @@ export default function App() {
         qaRisk={qaRisk}
         qaAmbiguity={qaAmbiguity}
         qaMissing={qaMissing}
+        qaPrefill={qaPrefill}
         qaBusy={qaBusy}
         onQaAnalyze={() => void runRoutingQa()}
         terminalLines={terminalLines}
@@ -1549,6 +2127,7 @@ export default function App() {
         onGenerate={() => void runGenerateByMode()}
         injectReusePayload={injectReusePayload}
         injectReuseSignal={injectReuseSignal}
+        onUpsertGeneratedFunction={upsertGeneratedFunction}
       />
       {scanManagerOpen && (
         <CodeManagementPanel
@@ -1617,6 +2196,7 @@ export default function App() {
           }}
         />
       )}
+      <DiffOverlay open={diffOpen} snapshot={diffSnapshot} onClose={() => setDiffOpen(false)} />
     </div>
   );
 }

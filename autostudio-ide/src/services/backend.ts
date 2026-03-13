@@ -346,6 +346,19 @@ export async function ragQuery(query: string, top_k: number, module?: string | n
   });
 }
 
+export type RagModuleHit = {
+  module_key: string;
+  display_name?: string;
+  score: number;
+};
+
+export async function ragQueryModules(query: string, top_k: number) {
+  return requestJson<{ hits: RagModuleHit[] }>('/py/rag/query-modules', {
+    method: 'POST',
+    body: JSON.stringify({ query, top_k })
+  });
+}
+
 export async function ragRunTest(req: { cwd: string; command: string; timeout_ms?: number }) {
   return requestJson<{ ok: boolean; returncode: number; stdout: string; stderr: string; duration_ms: number }>('/py/rag/test-run', {
     method: 'POST',
@@ -355,7 +368,16 @@ export async function ragRunTest(req: { cwd: string; command: string; timeout_ms
 
 export type TaskAnalyzeResponse = {
   ok: boolean;
+  debug_id?: string;
   analysis_markdown?: string;
+  analysis_struct?: {
+    goal?: string;
+    constraints?: string;
+    subtasks?: string;
+    risk_items?: string[];
+    missing_items?: string[];
+  };
+  llm_model?: string;
   rag_query?: string;
   rag_hits?: Array<{
     function_id: string;
@@ -468,6 +490,17 @@ export async function orchestratorGenerate(prompt: string) {
   });
 }
 
+export async function orchestratorGenerateCode(prompt: string) {
+  return requestJson<{ ok: boolean; code?: string; error?: string }>('/py/orchestrator/generate-code', {
+    method: 'POST',
+    body: JSON.stringify({
+      prompt,
+      source_event_id: null,
+      source_event_type: null
+    })
+  });
+}
+
 export async function codegenGlue(req: { task?: string; from_node: any; to_node: any }) {
   return requestJson<{ ok: boolean; glue_name?: string; doc_zh?: string; inputs_json?: any; outputs_json?: any; glue_code?: string; error?: string }>(
     '/py/codegen/glue',
@@ -476,6 +509,101 @@ export async function codegenGlue(req: { task?: string; from_node: any; to_node:
       body: JSON.stringify(req)
     }
   );
+}
+
+export async function codegenGlueCpp(req: {
+  task?: string;
+  from_node: any;
+  to_node: any;
+  from_code?: string;
+  to_code?: string;
+  cpp_rules?: string;
+}) {
+  const call = (path: string) =>
+    requestJson<{
+      ok: boolean;
+      function_name?: string;
+      display_name?: string;
+      signature?: string;
+      doc_zh?: string;
+      inputs_json?: any;
+      outputs_json?: any;
+      code?: string;
+      error?: string;
+    }>(path, {
+      method: 'POST',
+      body: JSON.stringify(req)
+    });
+
+  try {
+    return await call('/py/codegen/glue-cpp');
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e || '');
+    if (msg.includes('Not Found') || msg.includes('not found') || msg.includes('404')) {
+      try {
+        return await call('/py/codegen/glue_cpp');
+      } catch (e2) {
+        const msg2 = e2 instanceof Error ? e2.message : String(e2 || '');
+        if (!(msg2.includes('Not Found') || msg2.includes('not found') || msg2.includes('404'))) throw e2;
+
+        const prompt = [
+          '你是智能驾驶基础软件的胶水函数生成器。',
+          '请根据上下游节点的输入输出规范，生成一个中间转换节点的 C++ 胶水函数。',
+          '',
+          '关键约束：',
+          '- 只生成一个 C++ 函数（不要输出多个函数，不要输出 main，不要输出类/模板）。',
+          '- 允许必要的 #include 与 Doxygen 注释。',
+          '- 函数输入应匹配 from_node.outputs_json；函数输出应匹配 to_node.inputs_json。',
+          '- 实现字段映射与必要的类型转换；无法严格转换时用 TODO 标注，但代码需可编译。',
+          '- 必须严格遵守附带的【C++代码改写统一规范】。',
+          '',
+          `用户胶水需求：${String(req.task || '').trim()}`,
+          '',
+          '上游节点（from_node）：',
+          JSON.stringify(req.from_node ?? {}, null, 2),
+          '',
+          '下游节点（to_node）：',
+          JSON.stringify(req.to_node ?? {}, null, 2),
+          '',
+          '上游函数源代码（from_code）：',
+          String(req.from_code || '').slice(0, 12000),
+          '',
+          '下游函数源代码（to_code）：',
+          String(req.to_code || '').slice(0, 12000),
+          '',
+          '【C++代码改写统一规范（必须严格遵守）】',
+          String(req.cpp_rules || '').trim(),
+        ].join('\n');
+
+        const out = await orchestratorGenerateCode(prompt);
+        if (!out?.ok) throw new Error(String((out as any)?.error || '生成胶水函数失败'));
+        const md = String((out as any)?.code || '').trim();
+        const m3 = /```(?:cpp|c\+\+|c)\s*\n([\s\S]*?)\n```/i.exec(md);
+        const code = String(m3?.[1] || md).trim();
+        const sigLine = code
+          .replace(/\r\n/g, '\n')
+          .split('\n')
+          .map((l) => l.trim())
+          .find((l) => l.includes('(') && l.includes(')') && l.includes('{') && !l.startsWith('#'));
+        const fnName = (() => {
+          const s = String(sigLine || '');
+          const m = /\b([A-Za-z][A-Za-z0-9]*)\s*\(/.exec(s);
+          return String(m?.[1] || 'glueConvert');
+        })();
+        return {
+          ok: true,
+          function_name: fnName,
+          display_name: '格式转换胶水',
+          signature: sigLine || `void ${fnName}()`,
+          doc_zh: '',
+          inputs_json: (req as any)?.from_node?.outputs_json ?? {},
+          outputs_json: (req as any)?.to_node?.inputs_json ?? {},
+          code
+        };
+      }
+    }
+    throw e;
+  }
 }
 
 export async function releaseRagIndex(req: { version: string; functions: any[] }) {

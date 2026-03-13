@@ -96,7 +96,7 @@ const cases: EvaluationCase[] = [
   }
 ]
 
-export const EvaluationGate: React.FC = () => {
+export const EvaluationGate: React.FC<{ pageTitle?: string }> = (props) => {
   const [selectedGroup, setSelectedGroup] = useState<string>('core')
 
   const passCount = useMemo(() => cases.filter((c) => c.status === 'Pass').length, [])
@@ -108,7 +108,7 @@ export const EvaluationGate: React.FC = () => {
       <div className="max-w-7xl mx-auto space-y-8">
         <div className="flex justify-between items-end border-b border-slate-800 pb-6">
           <div>
-            <h1 className="text-3xl font-bold text-white mb-2">Evaluation Gate</h1>
+            <h1 className="text-3xl font-bold text-white mb-2">{props.pageTitle ?? 'Evaluation Gate'}</h1>
             <p className="text-slate-400">Six-dimensional evaluation, ODD pass rates, and detailed case execution logs.</p>
           </div>
           <div className="flex gap-3">
@@ -145,7 +145,7 @@ export const EvaluationGate: React.FC = () => {
               ))}
             </div>
             <div className="p-4 border-t border-slate-800">
-              <button className="w-full flex justify-center items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white py-2 rounded text-sm font-medium transition-colors">
+              <button className="w-full flex justify-center items-center gap-2 bg-brand-600 hover:bg-brand-500 text-white py-2 rounded text-sm font-medium transition-colors mllm-on-dark">
                 Run Simulation
               </button>
             </div>
@@ -166,7 +166,7 @@ export const EvaluationGate: React.FC = () => {
                   </div>
                 </div>
               </div>
-              <button className="px-6 py-3 bg-brand-600 hover:bg-brand-500 text-white font-bold rounded-lg shadow-lg shadow-brand-500/20 transition-all">
+              <button className="px-6 py-3 bg-brand-600 hover:bg-brand-500 text-white font-bold rounded-lg shadow-lg shadow-brand-500/20 transition-all mllm-on-dark">
                 Approve for Deployment
               </button>
             </div>

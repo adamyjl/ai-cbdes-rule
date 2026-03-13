@@ -12,16 +12,25 @@ import {
   Zap
 } from 'lucide-react'
 
-export const PromptStudio: React.FC = () => {
+export const PromptStudio: React.FC<{ pageTitle?: string }> = (props) => {
   const [useOptimizer, setUseOptimizer] = useState(false)
 
   return (
-    <div className="flex h-full w-full" style={{ background: 'var(--mllm-bg)', color: 'var(--mllm-text)' }}>
-      <div className="w-64 border-r flex flex-col" style={{ background: '#ffffff', borderColor: 'var(--mllm-border)' }}>
-        <div className="p-4 border-b" style={{ borderColor: 'var(--mllm-border)' }}>
-          <h2 className="text-lg font-bold mb-2" style={{ color: 'var(--mllm-text)' }}>
-            Prompt Packages
-          </h2>
+    <div className="flex h-full w-full flex-col" style={{ background: 'var(--mllm-bg)', color: 'var(--mllm-text)' }}>
+      {props.pageTitle && (
+        <div className="h-14 shrink-0 border-b flex items-center justify-center" style={{ borderColor: 'var(--mllm-border)' }}>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--mllm-text)' }}>
+            {props.pageTitle}
+          </h1>
+        </div>
+      )}
+
+      <div className="flex-1 min-h-0 flex w-full">
+        <div className="w-64 border-r flex flex-col" style={{ background: '#ffffff', borderColor: 'var(--mllm-border)' }}>
+          <div className="p-4 border-b" style={{ borderColor: 'var(--mllm-border)' }}>
+            <h2 className="text-lg font-bold mb-2" style={{ color: 'var(--mllm-text)' }}>
+              Prompt Packages
+            </h2>
           <button
             className="w-full flex items-center justify-center gap-2 py-2 rounded text-sm transition-colors border"
             style={{ background: '#ffffff', borderColor: 'var(--mllm-primary)', color: 'var(--mllm-primary)' }}
@@ -60,7 +69,7 @@ export const PromptStudio: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col">
         <div className="h-14 border-b flex justify-between items-center px-4" style={{ borderColor: 'var(--mllm-border)' }}>
           <div className="flex items-center gap-4">
             <span
@@ -245,6 +254,7 @@ Your output must be a JSON object containing the trajectory plan and control sig
               </div>
             </div>
           </div>
+        </div>
         </div>
       </div>
     </div>

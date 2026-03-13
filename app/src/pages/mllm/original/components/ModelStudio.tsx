@@ -16,17 +16,24 @@ import {
   Zap
 } from 'lucide-react'
 
-export const ModelStudio: React.FC = () => {
+export const ModelStudio: React.FC<{ pageTitle?: string }> = (props) => {
   const [activeStep, setActiveStep] = useState(1)
   const [tuningType, setTuningType] = useState<'sft' | 'rl'>('sft')
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
 
   return (
-    <div className="flex h-full w-full bg-slate-950 text-slate-200">
-      <div className="w-72 bg-slate-900 border-r border-slate-800 flex flex-col">
-        <div className="p-4 border-b border-slate-800">
-          <h2 className="text-lg font-bold text-white mb-2">Model Versions</h2>
-          <button className="w-full flex items-center justify-center gap-2 bg-brand-600 hover:bg-brand-500 text-white py-2 rounded text-sm font-medium transition-colors">
+    <div className="flex h-full w-full flex-col bg-slate-950 text-slate-200">
+      {props.pageTitle && (
+        <div className="h-14 shrink-0 border-b border-slate-800 flex items-center justify-center">
+          <h1 className="text-xl font-bold text-white">{props.pageTitle}</h1>
+        </div>
+      )}
+
+      <div className="flex-1 min-h-0 flex">
+        <div className="w-72 bg-slate-900 border-r border-slate-800 flex flex-col">
+          <div className="p-4 border-b border-slate-800">
+            <h2 className="text-lg font-bold text-white mb-2">Model Versions</h2>
+          <button className="w-full flex items-center justify-center gap-2 bg-brand-600 hover:bg-brand-500 text-white py-2 rounded text-sm font-medium transition-colors mllm-on-dark">
             + New Version
           </button>
         </div>
@@ -57,7 +64,7 @@ export const ModelStudio: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col">
         <div
           className="h-16 border-b border-slate-800 flex items-center px-8"
           style={{ background: 'var(--mllm-canvas)', color: 'var(--mllm-text)' }}
@@ -419,7 +426,7 @@ export const ModelStudio: React.FC = () => {
             {activeStep < 3 ? (
               <button
                 onClick={() => setActiveStep(activeStep + 1)}
-                className="px-6 py-2 bg-brand-600 hover:bg-brand-500 text-white font-bold rounded-lg transition-all"
+                className="px-6 py-2 bg-brand-600 hover:bg-brand-500 text-white font-bold rounded-lg transition-all mllm-on-dark"
               >
                 Next Step
               </button>
@@ -429,6 +436,7 @@ export const ModelStudio: React.FC = () => {
               </button>
             )}
           </div>
+        </div>
         </div>
       </div>
     </div>

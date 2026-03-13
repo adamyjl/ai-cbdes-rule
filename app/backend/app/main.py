@@ -15,6 +15,7 @@ from backend.app.routers.archive import router as archive_router
 from backend.app.routers.codegen import router as codegen_router
 from backend.app.routers.cot import router as cot_router
 from backend.app.routers.gate import router as gate_router
+from backend.app.routers.debug import router as debug_router
 from backend.app.routers.orchestrator import router as orchestrator_router
 from backend.app.routers.rag import router as rag_router
 from backend.app.routers.release import router as release_router
@@ -47,6 +48,7 @@ app.include_router(cot_router)
 app.include_router(orchestrator_router)
 app.include_router(gate_router)
 app.include_router(release_router)
+app.include_router(debug_router)
 
 
 @app.on_event('startup')

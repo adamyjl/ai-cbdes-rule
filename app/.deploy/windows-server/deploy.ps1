@@ -252,10 +252,11 @@ function Write-Caddyfile($path, $siteRoot, $fastApiPort, $expressPort, $httpPort
 
   handle_path /gaasd/* {
     root * C:\srv\ai-cbdes-rule\autostudio-ide\dist
-    @gaasd_index path / /index.html
     try_files {path} /index.html
-    header @gaasd_index Cache-Control "no-store"
-    header /assets/* Cache-Control "public, max-age=31536000, immutable"
+    @gaasd_assets path /assets/*
+    @gaasd_not_assets not path /assets/*
+    header @gaasd_not_assets Cache-Control "no-store"
+    header @gaasd_assets Cache-Control "public, max-age=31536000, immutable"
     file_server
   }
 
@@ -270,6 +271,10 @@ function Write-Caddyfile($path, $siteRoot, $fastApiPort, $expressPort, $httpPort
   handle {
     root * $siteRoot
     try_files {path} /index.html
+    @app_assets path /assets/*
+    @app_not_assets not path /assets/*
+    header @app_not_assets Cache-Control "no-store"
+    header @app_assets Cache-Control "public, max-age=31536000, immutable"
     file_server
   }
 }

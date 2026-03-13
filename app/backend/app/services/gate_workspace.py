@@ -36,7 +36,7 @@ def _extract_files_from_markdown(text: str) -> list[dict]:
         return []
 
     pat = re.compile(
-        r'^###\s+(?P<path>.+?)\s*$\n(?:(?:.|\n)*?)^```(?P<lang>[a-zA-Z0-9_+\-]*)\s*$\n(?P<body>(?:.|\n)*?)^```\s*$',
+        r'^\s*(?://\s*)?###\s+(?P<path>.+?)\s*$\n(?:(?:.|\n)*?)^\s*(?://\s*)?```(?P<lang>[a-zA-Z0-9_+\-]*)\s*$\n(?P<body>(?:.|\n)*?)^\s*(?://\s*)?```\s*$',
         flags=re.MULTILINE,
     )
     files: list[dict] = []
@@ -50,8 +50,23 @@ def _extract_files_from_markdown(text: str) -> list[dict]:
     if files:
         return files
 
+    pat_name = re.compile(
+        r'^\s*(?://\s*)?(?P<path>[^\n\r]+?\.(?:h|hpp|hh|hxx|c|cc|cpp|cxx))\s*$\n(?:(?:.|\n)*?)^\s*(?://\s*)?```(?P<lang>[a-zA-Z0-9_+\-]*)\s*$\n(?P<body>(?:.|\n)*?)^\s*(?://\s*)?```\s*$',
+        flags=re.MULTILINE,
+    )
+    files2: list[dict] = []
+    for m in pat_name.finditer(s):
+        path = _safe_relpath(m.group('path') or '')
+        body = (m.group('body') or '').strip()
+        if not path or not body:
+            continue
+        lang = (m.group('lang') or '').strip().lower() or 'cpp'
+        files2.append({'path': path, 'language': lang, 'content': body})
+    if files2:
+        return files2
+
     pat2 = re.compile(
-        r'^```(?P<lang>cpp|c\+\+|c)\s*$\n(?P<body>(?:.|\n)*?)^```\s*$',
+        r'^\s*(?://\s*)?```(?P<lang>cpp|c\+\+|c)\s*$\n(?P<body>(?:.|\n)*?)^\s*(?://\s*)?```\s*$',
         flags=re.MULTILINE,
     )
     blocks: list[dict] = []

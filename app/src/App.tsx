@@ -13,6 +13,7 @@ import { FunctionOrchestrationPage } from './pages/online/FunctionOrchestrationP
 import { TestGatePage } from './pages/online/TestGatePage'
 import { ReleasePage } from './pages/online/ReleasePage'
 import { MllmConsolePage } from './pages/mllm/MllmConsolePage'
+import { VlmPage } from './pages/vlm/VlmPage'
 import { LandingPage } from './pages/LandingPage'
 
 const SHOW_EXPERIMENTAL_BUILDERS = false
@@ -61,6 +62,7 @@ export default function App() {
         <Route path="/visual-builder" element={<VisualBuilderPage />} />
 
         <Route path="/mllm" element={<MllmConsolePage />} />
+        <Route path="/vlm" element={<VlmPage />} />
         <Route path="/gaasd" element={<ExternalPathRedirect target="/gaasd/" storageKey="redirect:gaasd" />} />
         <Route path="/gaasd/*" element={<ExternalPathRedirect target="/gaasd/" storageKey="redirect:gaasd" />} />
 

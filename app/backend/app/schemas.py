@@ -33,6 +33,16 @@ class RagQueryResponse(BaseModel):
     hits: list[RagQueryHit]
 
 
+class RagQueryModuleHit(BaseModel):
+    module_key: str
+    display_name: str = ''
+    score: float
+
+
+class RagQueryModulesResponse(BaseModel):
+    hits: list[RagQueryModuleHit]
+
+
 class ArchiveEventIn(BaseModel):
     type: str
     payload: dict
@@ -91,7 +101,10 @@ class TaskAnalyzeHit(BaseModel):
 
 class TaskAnalyzeResponse(BaseModel):
     ok: bool
+    debug_id: str | None = None
     analysis_markdown: str | None = None
+    analysis_struct: dict[str, Any] | None = None
+    llm_model: str | None = None
     rag_query: str | None = None
     rag_hits: list[TaskAnalyzeHit] = []
     error: str | None = None

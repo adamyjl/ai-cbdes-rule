@@ -130,3 +130,8 @@
 .mllm-root[data-theme='cast-light'] .mllm-topbar .bg-white * {
   color: var(--mllm-text) !important;
 }
+
+.mllm-root[data-theme='cast-light'] .mllm-on-dark,
+.mllm-root[data-theme='cast-light'] .mllm-on-dark * {
+  color: #ffffff !important;
+}

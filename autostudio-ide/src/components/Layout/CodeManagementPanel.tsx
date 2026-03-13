@@ -29,6 +29,7 @@ import {
   type RagKindJobStatus,
   type RagModuleIndexJobStatus
 } from '../../services/backend';
+import { libraryCache } from '../../services/libraryCache';
 
 type CodeManagementPanelProps = {
   rootDir: string;
@@ -66,45 +67,24 @@ export default function CodeManagementPanel(props: CodeManagementPanelProps) {
   const [scanStats, setScanStats] = useState<{ files: number; functions: number; at: string } | null>(null);
   const folderRef = useRef<HTMLInputElement>(null);
 
-  const cacheScope = String(props.rootDir || '').trim() || 'all';
-  const cacheKeyFns = `gaasd:scanmgr:fns:v1:${cacheScope}`;
-  const cacheKeyMods = `gaasd:scanmgr:mods:v1:${cacheScope}`;
-
-  const readCache = <T,>(key: string): { total: number; items: T[] } | null => {
-    try {
-      const raw = localStorage.getItem(key);
-      if (!raw) return null;
-      const obj = JSON.parse(raw);
-      const total = Number(obj?.total ?? 0);
-      const items = Array.isArray(obj?.items) ? (obj.items as T[]) : [];
-      if (!Number.isFinite(total) || total <= 0 || !items.length) return null;
-      return { total, items };
-    } catch {
-      return null;
-    }
-  };
-
-  const writeCache = <T,>(key: string, payload: { total: number; items: T[] }) => {
-    try {
-      localStorage.setItem(key, JSON.stringify({ ...payload, savedAt: Date.now() }));
-    } catch {
-    }
-  };
+  const cacheScope = 'scanmgr:all';
 
   const loadAll = async <T,>(loader: (p: { limit: number; offset: number }) => Promise<{ total: number; items: T[] }>) => {
     const limit = 1000;
     let offset = 0;
     const items: T[] = [];
+    let totalHint = 0;
     for (let i = 0; i < 80; i += 1) {
       const r = await loader({ limit, offset });
       const got = Array.isArray((r as any).items) ? ((r as any).items as T[]) : [];
       items.push(...got);
       const total = Number((r as any).total ?? items.length);
+      if (!totalHint && Number.isFinite(total) && total > 0) totalHint = total;
       if (items.length >= total) break;
       if (!got.length) break;
       offset += got.length;
     }
-    return items;
+    return { total: totalHint || items.length, items };
   };
 
   const selectedModule = useMemo(
@@ -117,17 +97,28 @@ export default function CodeManagementPanel(props: CodeManagementPanelProps) {
     try {
       const canUseCache = !opts?.force && !query && !moduleFilter && !kindFilter;
       if (canUseCache) {
-        const cachedFns = readCache<FunctionIndexItem>(cacheKeyFns);
-        const cachedMods = readCache<RagIndexedModuleItem>(cacheKeyMods);
-        if (cachedFns) setFunctions(cachedFns.items);
-        if (cachedMods) setModules(cachedMods.items);
-        const hasCache = Boolean(cachedFns?.items?.length || cachedMods?.items?.length);
+        let cachedFns: { total: number; items: FunctionIndexItem[]; savedAt: number } | null = null;
+        let cachedMods: { total: number; items: RagIndexedModuleItem[]; savedAt: number } | null = null;
+        try {
+          const out = await Promise.all([
+            libraryCache.getFunctions<FunctionIndexItem>(cacheScope),
+            libraryCache.getModules<RagIndexedModuleItem>(cacheScope)
+          ]);
+          cachedFns = out[0];
+          cachedMods = out[1];
+        } catch {
+          cachedFns = null;
+          cachedMods = null;
+        }
+        if (cachedFns?.items?.length) setFunctions(cachedFns.items);
+        if (cachedMods?.items?.length) setModules(cachedMods.items);
+        const hasCache = Boolean((cachedFns?.items?.length || 0) > 0 || (cachedMods?.items?.length || 0) > 0);
         if (hasCache) setLoading(false);
 
         if (cachedFns && cachedMods) {
           const [headFns, headMods] = await Promise.all([
-            ragListFunctions({ root_dir: props.rootDir || undefined, limit: 1, offset: 0 }),
-            ragListIndexedModules({ root_dir: props.rootDir || undefined, limit: 1, offset: 0 })
+            ragListFunctions({ limit: 1, offset: 0 }),
+            ragListIndexedModules({ limit: 1, offset: 0 })
           ]);
           if (Number(headFns.total) === Number(cachedFns.total) && Number(headMods.total) === Number(cachedMods.total)) {
             if (!selectedFunctionId && cachedFns.items.length) setSelectedFunctionId(cachedFns.items[0].function_id);
@@ -139,10 +130,9 @@ export default function CodeManagementPanel(props: CodeManagementPanelProps) {
 
       const hasAny = Boolean(functions.length || modules.length);
       if (!hasAny) setLoading(true);
-      const [fns, mods] = await Promise.all([
+      const [fnsOut, modsOut] = await Promise.all([
         loadAll<FunctionIndexItem>(({ limit, offset }) =>
           ragListFunctions({
-            root_dir: props.rootDir || undefined,
             q: query || undefined,
             module: moduleFilter || undefined,
             kind: kindFilter || undefined,
@@ -152,20 +142,24 @@ export default function CodeManagementPanel(props: CodeManagementPanelProps) {
         ),
         loadAll<RagIndexedModuleItem>(({ limit, offset }) =>
           ragListIndexedModules({
-            root_dir: props.rootDir || undefined,
             q: query || undefined,
             limit,
             offset
           }) as any
         )
       ]);
-      setFunctions(fns);
-      setModules(mods);
-      if (!selectedFunctionId && fns.length) setSelectedFunctionId(fns[0].function_id);
-      if (!selectedModuleKey && mods.length) setSelectedModuleKey(mods[0].module_key);
+      setFunctions(fnsOut.items);
+      setModules(modsOut.items);
+      if (!selectedFunctionId && fnsOut.items.length) setSelectedFunctionId(fnsOut.items[0].function_id);
+      if (!selectedModuleKey && modsOut.items.length) setSelectedModuleKey(modsOut.items[0].module_key);
       if (!query && !moduleFilter && !kindFilter) {
-        writeCache(cacheKeyFns, { total: fns.length, items: fns });
-        writeCache(cacheKeyMods, { total: mods.length, items: mods });
+        try {
+          await Promise.all([
+            libraryCache.setFunctions<FunctionIndexItem>(cacheScope, { total: fnsOut.total, items: fnsOut.items, savedAt: Date.now() }),
+            libraryCache.setModules<RagIndexedModuleItem>(cacheScope, { total: modsOut.total, items: modsOut.items, savedAt: Date.now() })
+          ]);
+        } catch {
+        }
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : '加载失败');

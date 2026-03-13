@@ -68,10 +68,15 @@
 
 GAASD 为 Vite 构建的 hash 资源（`/gaasd/assets/index-xxxx.js`）。若 `index.html` 被缓存而资源 hash 已更新，会导致浏览器白屏。
 
-为避免该问题，Caddy 对 `/gaasd/` 设置：
+为避免该问题，Caddy 对 SPA 的“入口 HTML”设置不缓存，并对 Vite 的 hash 资源设置长期缓存（immutable）：
 
 - `index.html`：`Cache-Control: no-store`
 - `/gaasd/assets/*`：`Cache-Control: public, max-age=31536000, immutable`
+
+同时建议对 Rule 主站（`/`，包含 `/mllm`、`/vlm` 等 SPA 路由）也采用同样策略：
+
+- 非 `/assets/*`：`Cache-Control: no-store`
+- `/assets/*`：`Cache-Control: public, max-age=31536000, immutable`
 
 对应配置见：`app/.runtime/Caddyfile` 与部署脚本中的 `Write-Caddyfile`。
 
@@ -105,4 +110,3 @@ GAASD 为 Vite 构建的 hash 资源（`/gaasd/assets/index-xxxx.js`）。若 `i
 
 - 部署态：检查 Caddyfile 是否使用 `handle_path /py/*` 并正确反代到 FastAPI 端口
 - 开发态：检查 Vite 代理配置（`app/vite.config.*`）
-

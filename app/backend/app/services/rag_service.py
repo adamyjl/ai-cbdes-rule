@@ -186,8 +186,8 @@ class RagService:
         t.start()
         return {'ok': True, 'job_id': job.job_id}
 
-    def start_module_index_job(self, root_dir: str) -> dict:
-        job = module_job_registry.create(root_dir=str(Path(root_dir).resolve()))
+    def start_module_index_job(self, root_dir: str, *, enrich: bool = False) -> dict:
+        job = module_job_registry.create(root_dir=str(Path(root_dir).resolve()), enrich=bool(enrich))
         t = threading.Thread(
             target=self._run_module_index_job,
             kwargs={'job_id': job.job_id},
@@ -444,40 +444,57 @@ class RagService:
                     'edges': [{'from': e['from'], 'to': e['to']} for e in cand.edges],
                 }
 
-                enriched = enrich_module(
-                    module_key=cand.module_key,
-                    display_name_hint=str(entry.get('display_name') or cand.module_key),
-                    graph=graph_for_llm,
-                )
-
-                self._store.upsert_module(
-                    module_key=cand.module_key,
-                    root_dir=res.root_dir,
-                    entry_function_id=cand.entry_function_id,
-                    display_name=enriched.get('display_name') or cand.module_key,
-                    doc_zh=enriched.get('doc_zh') or '',
-                    doc_en=enriched.get('doc_en') or '',
-                    inputs_json=enriched.get('inputs_json') or '{}',
-                    outputs_json=enriched.get('outputs_json') or '{}',
-                    nodes_json=json.dumps(nodes, ensure_ascii=False),
-                    edges_json=json.dumps(edges, ensure_ascii=False),
-                    source='discovered',
-                    reset_embedding=True,
-                )
-
-                try:
-                    text = (
-                        f"module_key: {cand.module_key}\nroot_dir: {res.root_dir}\n"
-                        f"name: {enriched.get('display_name') or cand.module_key}\n"
-                        f"inputs: {enriched.get('inputs_json') or '{}'}\noutputs: {enriched.get('outputs_json') or '{}'}\n\n"
-                        f"{enriched.get('doc_zh') or ''}\n\n{enriched.get('doc_en') or ''}\n\n"
-                        f"graph: {json.dumps(graph_for_llm, ensure_ascii=False)}"
+                if job.enrich:
+                    enriched = enrich_module(
+                        module_key=cand.module_key,
+                        display_name_hint=str(entry.get('display_name') or cand.module_key),
+                        graph=graph_for_llm,
                     )
-                    vec = embed_texts([text])[0]
-                    blob, dim = pack_embedding(vec)
-                    self._store.set_module_embedding(module_key=cand.module_key, embedding=blob, dim=dim)
-                except Exception:
-                    pass
+
+                    self._store.upsert_module(
+                        module_key=cand.module_key,
+                        root_dir=res.root_dir,
+                        entry_function_id=cand.entry_function_id,
+                        display_name=enriched.get('display_name') or cand.module_key,
+                        doc_zh=enriched.get('doc_zh') or '',
+                        doc_en=enriched.get('doc_en') or '',
+                        inputs_json=enriched.get('inputs_json') or '{}',
+                        outputs_json=enriched.get('outputs_json') or '{}',
+                        nodes_json=json.dumps(nodes, ensure_ascii=False),
+                        edges_json=json.dumps(edges, ensure_ascii=False),
+                        source='discovered',
+                        reset_embedding=True,
+                    )
+
+                    try:
+                        text = (
+                            f"module_key: {cand.module_key}\nroot_dir: {res.root_dir}\n"
+                            f"name: {enriched.get('display_name') or cand.module_key}\n"
+                            f"inputs: {enriched.get('inputs_json') or '{}'}\noutputs: {enriched.get('outputs_json') or '{}'}\n\n"
+                            f"{enriched.get('doc_zh') or ''}\n\n{enriched.get('doc_en') or ''}\n\n"
+                            f"graph: {json.dumps(graph_for_llm, ensure_ascii=False)}"
+                        )
+                        vec = embed_texts([text])[0]
+                        blob, dim = pack_embedding(vec)
+                        self._store.set_module_embedding(module_key=cand.module_key, embedding=blob, dim=dim)
+                    except Exception:
+                        pass
+                else:
+                    display_name = str(entry.get('display_name') or cand.module_key)
+                    self._store.upsert_module(
+                        module_key=cand.module_key,
+                        root_dir=res.root_dir,
+                        entry_function_id=cand.entry_function_id,
+                        display_name=display_name,
+                        doc_zh='',
+                        doc_en='',
+                        inputs_json=str(entry.get('inputs_json') or '{}'),
+                        outputs_json=str(entry.get('outputs_json') or '{}'),
+                        nodes_json=json.dumps(nodes, ensure_ascii=False),
+                        edges_json=json.dumps(edges, ensure_ascii=False),
+                        source='discovered',
+                        reset_embedding=False,
+                    )
 
                 embedded_so_far += 1
                 module_job_registry.touch(job, processed_embeddings=embedded_so_far)
@@ -917,6 +934,16 @@ class RagService:
             )
             for h in hits
         ]
+
+    def query_modules(self, query: str, top_k: int) -> list[dict]:
+        try:
+            q_emb = embed_texts([query])[0]
+        except Exception as e:
+            detail = str(e) or type(e).__name__
+            raise HTTPException(status_code=502, detail=f'aliyun_embed_failed: {detail}')
+        hits = self._store.query_similar_modules(q_emb, top_k=int(top_k))
+        self._archive.append_event('rag.query_modules', {'query': query, 'top_k': int(top_k), 'hits': len(hits)})
+        return hits
 
     def list_modules(self, *, root_dir: str | None = None) -> dict:
         root = str(Path(root_dir).resolve()) if root_dir else None

@@ -8,7 +8,11 @@ import { useLocation } from 'react-router-dom'
 export function AppShell(props: { children: ReactNode }) {
   const bootstrapArchives = useArchiveStore((s) => s.bootstrap)
   const location = useLocation()
-  const isMllm = location.pathname === '/mllm' || location.pathname.startsWith('/mllm/')
+  const isMllm =
+    location.pathname === '/mllm' ||
+    location.pathname.startsWith('/mllm/') ||
+    location.pathname === '/vlm' ||
+    location.pathname.startsWith('/vlm/')
   const isLanding = location.pathname === '/'
 
   useEffect(() => {

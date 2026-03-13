@@ -14,13 +14,13 @@ import {
   Smartphone
 } from 'lucide-react'
 
-export const DeploymentHub: React.FC = () => {
+export const DeploymentHub: React.FC<{ pageTitle?: string }> = (props) => {
   return (
     <div className="h-full w-full bg-slate-950 p-8 overflow-y-auto">
       <div className="max-w-6xl mx-auto space-y-8">
         <div className="flex justify-between items-end border-b border-slate-800 pb-6">
           <div>
-            <h1 className="text-3xl font-bold text-white mb-2">Deployment Hub</h1>
+            <h1 className="text-3xl font-bold text-white mb-2">{props.pageTitle ?? 'Deployment Hub'}</h1>
             <p className="text-slate-400">Generate, validate, and export release artifacts for vehicle and cloud environments.</p>
           </div>
           <div className="flex gap-3">
@@ -52,7 +52,7 @@ export const DeploymentHub: React.FC = () => {
               </span>
             </div>
           </div>
-          <button className="px-6 py-3 bg-brand-600 hover:bg-brand-500 text-white font-bold rounded-lg shadow-lg shadow-brand-500/20 transition-all transform hover:scale-105">
+          <button className="px-6 py-3 bg-brand-600 hover:bg-brand-500 text-white font-bold rounded-lg shadow-lg shadow-brand-500/20 transition-all transform hover:scale-105 mllm-on-dark">
             Generate Release
           </button>
         </div>

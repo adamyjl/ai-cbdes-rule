@@ -2,13 +2,13 @@ import React from 'react'
 import { TARGET_PLATFORMS } from '../constants'
 import { Target, Map, Activity, Cpu, CheckCircle2 } from 'lucide-react'
 
-export const ProjectCenter: React.FC = () => {
+export const ProjectCenter: React.FC<{ pageTitle?: string }> = (props) => {
   return (
     <div className="h-full w-full p-8 overflow-y-auto" style={{ background: 'var(--mllm-bg)', color: 'var(--mllm-text)' }}>
       <div className="max-w-5xl mx-auto space-y-8">
         <div className="border-b pb-6" style={{ borderColor: 'var(--mllm-border)' }}>
           <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--mllm-text)' }}>
-            Project Center AI-CBDES-MLLM
+            {props.pageTitle ?? 'Project Center AI-CBDES-MLLM'}
           </h1>
           <p style={{ color: 'var(--mllm-text-muted)' }}>Define ODD, operational constraints, and target deployment hardware.</p>
         </div>

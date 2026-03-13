@@ -1,7 +1,17 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { clsx } from 'clsx';
 import { Copy, Loader2, RefreshCw, X } from 'lucide-react';
-import { ragListFunctions, ragListIndexedModules, type FunctionIndexItem, type RagIndexedModuleItem } from '../../services/backend';
+import {
+  ragGetFunction,
+  ragGetModule,
+  ragListFunctions,
+  ragListIndexedModules,
+  ragQuery,
+  ragQueryModules,
+  type FunctionIndexItem,
+  type RagIndexedModuleItem,
+  type RagModuleHit
+} from '../../services/backend';
 
 type ReuseCandidate =
   | {
@@ -37,6 +47,7 @@ export default function ReuseModulePanel(props: {
   const [error, setError] = useState('');
   const [items, setItems] = useState<ReuseCandidate[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const searchSeqRef = useRef(0);
 
   const existingFnSet = useMemo(() => new Set(props.existingFunctionIds.map((x) => String(x || '').trim()).filter(Boolean)), [props.existingFunctionIds]);
   const existingModSet = useMemo(() => new Set(props.existingModuleKeys.map((x) => String(x || '').trim()).filter(Boolean)), [props.existingModuleKeys]);
@@ -63,42 +74,183 @@ export default function ReuseModulePanel(props: {
     return `命中：${hits.slice(0, 4).join('、')}`;
   };
 
-  const runSearch = async () => {
+  const mapLimit = async <T, R>(
+    xs: T[],
+    limit: number,
+    fn: (x: T, idx: number) => Promise<R>
+  ): Promise<R[]> => {
+    const out: R[] = new Array(xs.length);
+    let cursor = 0;
+    const workers = Array.from({ length: Math.max(1, Math.min(limit, xs.length)) }).map(async () => {
+      while (cursor < xs.length) {
+        const idx = cursor++;
+        out[idx] = await fn(xs[idx], idx);
+      }
+    });
+    await Promise.all(workers);
+    return out;
+  };
+
+  const runSearch = async (seq: number) => {
     setError('');
     setLoading(true);
     try {
-      const rootDir = String(props.rootDir || '').trim();
-      const q = queryText;
-      const [fRes, mRes] = await Promise.all([
-        ragListFunctions({ root_dir: rootDir || undefined, q, limit: 50, offset: 0 }),
-        ragListIndexedModules({ root_dir: rootDir || undefined, q, limit: 50, offset: 0 })
-      ]);
+      const semanticQuery = (() => {
+        const a = String(props.requirementText || '').trim();
+        const b = String(props.canvasDigestText || '').trim();
+        const s = a || b;
+        return s.length > 400 ? s.slice(0, 400) : s;
+      })();
+      if (!semanticQuery) {
+        setItems([]);
+        setSelectedIds([]);
+        setError('请先填写需求或在画布中加入节点后再尝试自动复用');
+        return;
+      }
 
-      const fItems = (Array.isArray((fRes as any).items) ? ((fRes as any).items as FunctionIndexItem[]) : []).map((f) => {
-        const title = String(f.display_name || f.function_id);
+      const tokenize = (s: string) => {
+        const raw = String(s || '')
+          .toLowerCase()
+          .replace(/[\u0000-\u001f]/g, ' ')
+          .replace(/[，。；、,.!?:;()\[\]{}<>"'`~@#$%^&*_+=|\\/\-]+/g, ' ');
+        const parts = raw
+          .split(/\s+/)
+          .map((x) => x.trim())
+          .filter(Boolean)
+          .filter((x) => x.length >= 2)
+          .slice(0, 24);
+        return Array.from(new Set(parts));
+      };
+      const qTokens = tokenize(semanticQuery);
+      const scoreByTokens = (hay: string) => {
+        const h = String(hay || '').toLowerCase();
+        let s = 0;
+        for (const t of qTokens) if (t && h.includes(t)) s += 1;
+        return s;
+      };
+
+      const [qRes, modQ] = await Promise.all([ragQuery(semanticQuery, 20, null), ragQueryModules(semanticQuery, 30)]);
+      const hits = Array.isArray((qRes as any)?.hits) ? ((qRes as any).hits as any[]) : [];
+      const modHits = Array.isArray((modQ as any)?.hits) ? (((modQ as any).hits as any[]) as RagModuleHit[]) : [];
+
+      const fDetails = await Promise.all(
+        hits
+          .map((h) => String(h?.function_id || '').trim())
+          .filter(Boolean)
+          .slice(0, 12)
+          .map(async (fid) => {
+            try {
+              const out = await ragGetFunction(fid);
+              const fn = (out as any)?.function || (out as any);
+              return fn && typeof fn === 'object' ? fn : null;
+            } catch {
+              return null;
+            }
+          })
+      );
+
+      let fList = fDetails.filter(Boolean) as FunctionIndexItem[];
+      if (!fList.length) {
+        try {
+          const fallback = await ragListFunctions({ q: semanticQuery, limit: 30, offset: 0 });
+          fList = Array.isArray((fallback as any)?.items) ? ((fallback as any).items as FunctionIndexItem[]) : [];
+        } catch {
+          fList = [];
+        }
+      }
+
+      const fItems = fList.map((f: any) => {
+        const fid = String(f.function_id || '').trim();
+        const title = String(f.display_name || f.name || fid);
         const subtitle = [String(f.module || ''), String(f.signature || '')].filter(Boolean).join(' · ');
         return {
           kind: 'function',
-          function: f,
-          id: `fn:${String(f.function_id)}`,
+          function: {
+            ...f,
+            function_id: fid,
+            display_name: title
+          } as any,
+          id: `fn:${fid}`,
           title,
           subtitle,
-          reason: toReason(props.requirementText, `${title} ${String(f.doc_zh || '')}`)
+          reason: toReason(props.requirementText, `${title} ${String((f as any).doc_zh || '')}`)
         } as const;
       });
 
-      const mItems = (Array.isArray((mRes as any).items) ? ((mRes as any).items as RagIndexedModuleItem[]) : []).map((m) => {
-        const title = String(m.display_name || m.module_key);
-        const subtitle = [String(m.module_key || ''), `${Number(m.node_count || 0)}/${Number(m.edge_count || 0)}`].filter(Boolean).join(' · ');
-        return {
-          kind: 'module',
-          module: m,
-          id: `mod:${String(m.module_key)}`,
-          title,
-          subtitle,
-          reason: toReason(props.requirementText, `${title} ${String(m.doc_zh || '')}`)
-        } as const;
-      });
+      const modKeyScore = new Map<string, number>();
+      const modKeyName = new Map<string, string>();
+      for (const h of modHits) {
+        const mk = String((h as any)?.module_key || '').trim();
+        const sc = Number((h as any)?.score || 0);
+        if (!mk) continue;
+        if (!modKeyScore.has(mk) || (Number.isFinite(sc) && sc > (modKeyScore.get(mk) || 0))) modKeyScore.set(mk, sc);
+        const dn = String((h as any)?.display_name || '').trim();
+        if (dn && !modKeyName.has(mk)) modKeyName.set(mk, dn);
+      }
+
+      const candidateModuleKeys = Array.from(modKeyScore.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([k]) => k)
+        .filter((k) => !existingModSet.has(k))
+        .slice(0, 18);
+
+      let modDetails: RagIndexedModuleItem[] = [];
+      if (candidateModuleKeys.length) {
+        const mods = await mapLimit(candidateModuleKeys, 6, async (mk) => {
+          try {
+            const r = await ragGetModule(mk);
+            const m = (r as any)?.module;
+            if (r && (r as any).ok && m && typeof m === 'object') return m as RagIndexedModuleItem;
+            return null;
+          } catch {
+            return null;
+          }
+        });
+        modDetails = mods.filter(Boolean) as RagIndexedModuleItem[];
+      }
+
+      if (!modDetails.length) {
+        try {
+          const fallbackQ = qTokens[0] || semanticQuery.slice(0, 12);
+          const r = await ragListIndexedModules({ q: fallbackQ || undefined, limit: 80, offset: 0 });
+          modDetails = Array.isArray((r as any)?.items) ? (((r as any).items as any[]) as RagIndexedModuleItem[]) : [];
+        } catch {
+          modDetails = [];
+        }
+      }
+
+      const mItems = modDetails
+        .map((m) => {
+          const mk = String(m.module_key || '').trim();
+          const title = String(m.display_name || modKeyName.get(mk) || mk);
+          const subtitle = [mk, `${Number(m.node_count || 0)}/${Number(m.edge_count || 0)}`].filter(Boolean).join(' · ');
+          const lexical = scoreByTokens(`${title} ${String(m.doc_zh || '')} ${mk}`);
+          const vec = modKeyScore.get(mk) || 0;
+          const score = lexical + (vec > 0 ? vec * 12 : 0);
+          return {
+            kind: 'module',
+            module: {
+              ...m,
+              module_key: mk,
+              display_name: title
+            } as any,
+            id: `mod:${mk}`,
+            title,
+            subtitle,
+            reason: toReason(props.requirementText, `${title} ${String(m.doc_zh || '')}`),
+            _score: score,
+            _vec: vec
+          } as const;
+        })
+        .sort((a, b) => {
+          if ((b._score || 0) !== (a._score || 0)) return (b._score || 0) - (a._score || 0);
+          return (b._vec || 0) - (a._vec || 0);
+        })
+        .slice(0, 24)
+        .map((x) => {
+          const { _score, _vec, ...rest } = x as any;
+          return rest as any;
+        });
 
       const out: ReuseCandidate[] = [];
       const seen = new Set<string>();
@@ -116,20 +268,28 @@ export default function ReuseModulePanel(props: {
         seen.add(next.id);
         out.push(next);
       }
+      if (searchSeqRef.current !== seq) return;
       setItems(out);
       setSelectedIds([]);
     } catch (e) {
+      if (searchSeqRef.current !== seq) return;
       setError(e instanceof Error ? e.message : '检索失败');
       setItems([]);
       setSelectedIds([]);
     } finally {
-      setLoading(false);
+      if (searchSeqRef.current === seq) setLoading(false);
     }
   };
 
   useEffect(() => {
-    void runSearch();
-  }, [queryText, props.rootDir]);
+    const seq = (searchSeqRef.current += 1);
+    const t = window.setTimeout(() => {
+      void runSearch(seq);
+    }, 450);
+    return () => {
+      window.clearTimeout(t);
+    };
+  }, [queryText]);
 
   const selectedCount = selectedIds.length;
   const canConfirm = selectedCount > 0;
@@ -192,7 +352,10 @@ export default function ReuseModulePanel(props: {
               <div className="text-[11px] text-gray-700 whitespace-pre-wrap line-clamp-3">{queryText || '-'}</div>
             </div>
             <button
-              onClick={() => void runSearch()}
+              onClick={() => {
+                const seq = (searchSeqRef.current += 1);
+                void runSearch(seq);
+              }}
               disabled={loading}
               className="h-8 px-3 rounded border border-[#E1BEE7] hover:bg-[#F8ECFA] text-[#6A1B9A] disabled:opacity-50 flex items-center gap-2"
             >
@@ -299,4 +462,3 @@ export default function ReuseModulePanel(props: {
     </div>
   );
 }
-

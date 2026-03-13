@@ -42,3 +42,30 @@ def generate_glue(req: GlueGenerateRequest):
     except Exception as e:
         msg = str(e) or type(e).__name__
         return {'ok': False, 'error': msg}
+
+
+class GlueCppGenerateRequest(BaseModel):
+    task: str = ''
+    from_node: dict
+    to_node: dict
+    from_code: str = ''
+    to_code: str = ''
+    cpp_rules: str = ''
+
+
+@router.post('/glue-cpp')
+@router.post('/glue_cpp')
+def generate_glue_cpp(req: GlueCppGenerateRequest):
+    try:
+        out = glue_service.generate_glue_cpp(
+            task=str(req.task or ''),
+            from_node=req.from_node,
+            to_node=req.to_node,
+            from_code=str(req.from_code or ''),
+            to_code=str(req.to_code or ''),
+            cpp_rules=str(req.cpp_rules or ''),
+        )
+        return {'ok': True, **out}
+    except Exception as e:
+        msg = str(e) or type(e).__name__
+        return {'ok': False, 'error': msg}

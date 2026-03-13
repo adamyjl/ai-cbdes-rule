@@ -12,7 +12,7 @@ import {
   Plus
 } from 'lucide-react'
 
-export const DataFactory: React.FC = () => {
+export const DataFactory: React.FC<{ pageTitle?: string }> = (props) => {
   const [activeTab, setActiveTab] = useState<'public' | 'proprietary'>('public')
 
   const datasets = activeTab === 'public' ? PUBLIC_DATASETS : PROPRIETARY_DATASETS
@@ -22,14 +22,14 @@ export const DataFactory: React.FC = () => {
       <div className="max-w-7xl mx-auto space-y-8">
         <div className="flex justify-between items-end border-b border-slate-800 pb-6">
           <div>
-            <h1 className="text-3xl font-bold text-white mb-2">Data Factory</h1>
+            <h1 className="text-3xl font-bold text-white mb-2">{props.pageTitle ?? 'Data Factory'}</h1>
             <p className="text-slate-400">Manage, curate, and analyze autonomous driving datasets.</p>
           </div>
           <div className="flex gap-3">
             <button className="flex items-center gap-2 px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-300 hover:text-white hover:border-slate-500 transition-colors">
               <Filter className="h-4 w-4" /> Filter
             </button>
-            <button className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white font-medium rounded-lg shadow-lg shadow-brand-500/20 transition-all">
+            <button className="flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white font-medium rounded-lg shadow-lg shadow-brand-500/20 transition-all mllm-on-dark">
               <Plus className="h-4 w-4" /> Import Dataset
             </button>
           </div>
@@ -158,4 +158,3 @@ export const DataFactory: React.FC = () => {
     </div>
   )
 }
-

@@ -15,6 +15,7 @@ def _utc_now_iso() -> str:
 class ModuleIndexJob:
     job_id: str
     root_dir: str
+    enrich: bool
 
     stage: str
     started_at: str
@@ -55,6 +56,7 @@ class ModuleIndexJob:
         return {
             'job_id': self.job_id,
             'root_dir': self.root_dir,
+            'enrich': bool(self.enrich),
             'stage': self.stage,
             'started_at': self.started_at,
             'updated_at': self.updated_at,
@@ -76,12 +78,13 @@ class ModuleIndexJobRegistry:
         self._lock = threading.Lock()
         self._jobs: dict[str, ModuleIndexJob] = {}
 
-    def create(self, *, root_dir: str) -> ModuleIndexJob:
+    def create(self, *, root_dir: str, enrich: bool = False) -> ModuleIndexJob:
         with self._lock:
             job_id = str(uuid4())
             job = ModuleIndexJob(
                 job_id=job_id,
                 root_dir=root_dir,
+                enrich=bool(enrich),
                 stage='queued',
                 started_at=_utc_now_iso(),
                 updated_at=_utc_now_iso(),
@@ -124,4 +127,3 @@ class ModuleIndexJobRegistry:
 
 
 registry = ModuleIndexJobRegistry()
-

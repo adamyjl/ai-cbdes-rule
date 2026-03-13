@@ -3,19 +3,133 @@ import { Search, RotateCw, ChevronDown, ChevronRight, X, Maximize2, LayoutGrid, 
 import type React from 'react';
 import { useMemo, useState, useRef, useEffect } from 'react';
 import { clsx } from 'clsx';
+import GlueCppPanel from './GlueCppPanel';
+import ReviewItemsModal from './ReviewItemsModal';
+import { libraryCache } from '../../services/libraryCache';
 import {
-  codegenGlue,
+  codegenGlueCpp,
   cotQuestion,
   cotRefine,
   cotGeneratePrompt,
   ragGetFunction,
   ragGetModule,
+  ragQuery,
+  ragQueryModules,
   ragListFunctions,
   ragListIndexedModules,
   ragRepairModuleFromPath,
   type FunctionIndexItem,
-  type RagIndexedModuleItem
+  type RagIndexedModuleItem,
+  type RagModuleHit
 } from '../../services/backend';
+
+const CPP_REWRITE_RULES = String.raw`【C++代码改写统一规范（必须严格遵守）】
+生成 C++ 代码改写时需按统一表格字段与编码规范填写与实现：完成日期与姓名按“每个函数一行”分别记录以便追溯与工时统计；改写后文件夹名称采用大驼峰命名（如 BezierSpline），改写后源文件与头文件采用小驼峰命名（如 funBezier.cpp、funBezier.h），改写后路径按实际工程路径填写；改写前类型仅能在“类/函数”中二选一；改写后一级函数名必须同时满足三条约束：提供 Doxygen 函数说明、使用小驼峰且不得包含“_”“.”等分隔符、并作为测试用例中可由 main 直接调用的最上层入口（如 generateBezierPath），二级函数名为一级函数调用的下层函数（如 pointOnCubicBezier），三级函数名为二级函数调用的更下层函数（若有则同样小驼峰命名）；同时需给出函数中文名称（如“贝塞尔曲线”）用于组件展示与检索；整体质量与设计要求为：编译器警告/错误等级必须拉到最高并消除全部告警，代码结构必须包含注释说明、设计文档与函数主体三部分，不允许使用全局变量且静态变量不推荐使用（尽量将状态保存在顶层函数变量中），函数职责应单一，函数/类命名统一采用驼峰法，函数名展示长度建议不超过 12 个汉字，源码统一使用 UTF-8 编码，注释统一采用 Doxygen 格式且使用中文标点；控制流与语言特性限制为：禁止使用 goto，以及在 if-else 的 body 内禁止出现 return、break 等逻辑跳出语句，单个函数代码行数上限为 200 行；代码改写遵循“整体按 C 语言规范书写”的原则：复合函数必须采用 C 风格接口与实现形态，原子函数内部可采用少量 C++ 语法但对外接口必须呈现 C 语法格式，不支持类与模板语法，容器类（如 vector）需改为定长数组或 malloc 动态分配，指针使用方式需统一为“数组化”呈现并保持风格一致，表达式需拆解为清晰的逐步计算节点（禁止 ++/--，+=/-= 等复合赋值必须展开为显式赋值，三目运算符必须改为 if-else）；逻辑控制语句需满足“条件为单一变量、执行体为单一函数、禁止逻辑跳出语句”的约束：if-else 的条件变量应来自变量赋值或函数返回的单值比较，执行体封装为单一原子/复合函数且允许只有 if 无 else，但禁止在 if/else 内提前 return；for 循环必须将起始值、步进值、结束值拆为单一变量并以显式赋值/函数赋值方式获得，循环体同样封装为单一函数；注释细则为：函数头注释按给定 Doxygen 字段模板完整填写（含 @brief、@en_name、@cn_name、@type、@param、@param[IN]/[OUT]、@var、@retval、@granularity、@tag_level1/@tag_level2、@formula、@version、@date、@author 等），复合函数体内局部变量声明/定义必须在行尾注释说明变量含义；结构体字段采用大驼峰命名并在行尾注释中标注物理单位，数组字段在 @field 中用 Array<元素类型, 维度> 书写；枚举、宏定义与宏函数分别按对应 Doxygen 规范注释，其中宏定义可按日常习惯行尾注释即可，宏函数需提供 @tag MACRO_Function 与入参/返回值说明。`;
+
+const hasZh = (s: string) => /[\u4e00-\u9fff]/.test(String(s || ''));
+
+const extractCnNameFromDoc = (doc: string) => {
+  const s = String(doc || '');
+  const m1 = s.match(/@cn_name\s*[:：]?\s*([^\n\r]+)/i);
+  if (m1 && m1[1] && hasZh(m1[1])) return String(m1[1]).trim();
+  const m2 = s.match(/中文(?:名称|名)\s*[:：]\s*([^\n\r]+)/i);
+  if (m2 && m2[1] && hasZh(m2[1])) return String(m2[1]).trim();
+  return '';
+};
+
+const cnizeIdentifier = (raw: string) => {
+  const s0 = String(raw || '').trim();
+  if (!s0) return '';
+  if (hasZh(s0)) return s0;
+  const base = s0.replace(/_[0-9a-f]{6,}$/i, '').replace(/\b0x[0-9a-f]+\b/gi, '').trim();
+  const spaced = base
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_\-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const tokens = spaced.split(' ').filter(Boolean);
+  const dict: Record<string, string> = {
+    validate: '校验',
+    check: '检查',
+    verify: '验证',
+    get: '获取',
+    set: '设置',
+    init: '初始化',
+    create: '创建',
+    build: '构建',
+    update: '更新',
+    remove: '移除',
+    delete: '删除',
+    add: '添加',
+    find: '查找',
+    first: '第一个',
+    next: '下一个',
+    prev: '上一个',
+    previous: '上一个',
+    sibling: '同级',
+    child: '子节点',
+    parent: '父节点',
+    node: '节点',
+    edge: '连线',
+    graph: '图',
+    tree: '树',
+    path: '路径',
+    route: '路径',
+    routing: '路径规划',
+    planning: '规划',
+    plan: '规划',
+    planner: '规划器',
+    trajectory: '轨迹',
+    traj: '轨迹',
+    speed: '速度',
+    accel: '加速度',
+    acceleration: '加速度',
+    yaw: '航向',
+    pose: '位姿',
+    point: '点',
+    points: '点集',
+    distance: '距离',
+    interpolate: '插值',
+    interpolation: '插值',
+    interp: '插值',
+    spline: '样条',
+    bezier: '贝塞尔',
+    lerp: '线性插值',
+    cubic: '三次',
+    linear: '线性',
+    filter: '滤波',
+    smooth: '平滑'
+  };
+  const out: string[] = [];
+  let hit = 0;
+  for (const t0 of tokens) {
+    const t = String(t0 || '').trim();
+    if (!t) continue;
+    const k = t.toLowerCase();
+    const v = dict[k] || dict[k.replace(/s$/, '')];
+    if (v) {
+      out.push(v);
+      hit += 1;
+    } else {
+      out.push(t);
+    }
+  }
+  const joined = out.join('');
+  if (hit > 0 && hasZh(joined)) return joined;
+  return s0;
+};
+
+const cnLabelForFunction = (fn: FunctionIndexItem) => {
+  const cn = extractCnNameFromDoc(String((fn as any).doc_zh || ''));
+  if (cn) return cn;
+  return cnizeIdentifier(String(fn.display_name || fn.function_id || ''));
+};
+
+const cnLabelForModule = (m: RagIndexedModuleItem) => {
+  const cn = extractCnNameFromDoc(String((m as any).doc_zh || ''));
+  if (cn) return cn;
+  return cnizeIdentifier(String(m.display_name || m.module_key || ''));
+};
 
 // --- Reusable Components ---
 
@@ -85,31 +199,10 @@ const ComponentLibrary = (props: {
   const [error, setError] = useState('');
   const [functions, setFunctions] = useState<FunctionIndexItem[]>([]);
   const [modules, setModules] = useState<RagIndexedModuleItem[]>([]);
+  const [ragFnScore, setRagFnScore] = useState<Map<string, number>>(() => new Map());
+  const [ragModScore, setRagModScore] = useState<Map<string, number>>(() => new Map());
   const didRepairRef = useRef(false);
-  const cacheScope = String(props.rootDir || '').trim() || 'all';
-  const cacheKeyFns = `gaasd:library:fns:v1:${cacheScope}`;
-  const cacheKeyMods = `gaasd:library:mods:v1:${cacheScope}`;
-
-  const readCache = <T,>(key: string): { total: number; items: T[] } | null => {
-    try {
-      const raw = localStorage.getItem(key);
-      if (!raw) return null;
-      const obj = JSON.parse(raw);
-      const total = Number(obj?.total ?? 0);
-      const items = Array.isArray(obj?.items) ? (obj.items as T[]) : [];
-      if (!Number.isFinite(total) || total <= 0) return null;
-      return { total, items };
-    } catch {
-      return null;
-    }
-  };
-
-  const writeCache = <T,>(key: string, payload: { total: number; items: T[] }) => {
-    try {
-      localStorage.setItem(key, JSON.stringify({ ...payload, savedAt: Date.now() }));
-    } catch {
-    }
-  };
+  const cacheScope = 'all';
 
   const normalizeCategory = (v: string) => {
     const s = String(v || '').trim().toLowerCase();
@@ -129,6 +222,127 @@ const ComponentLibrary = (props: {
     return '';
   };
 
+  const buildTokenSpec = (q: string) => {
+    const raw = String(q || '').trim();
+    if (!raw) return { strong: [] as string[], weak: [] as string[] };
+    const parts = raw
+      .split(/\s+/)
+      .map((x) => x.trim())
+      .filter(Boolean);
+    const strong = new Set<string>();
+    for (const p of parts) strong.add(p.toLowerCase());
+
+    const joined = parts.join('');
+    if (joined && joined !== raw) strong.add(joined.toLowerCase());
+    const weak = new Set<string>();
+    const add = (xs: string[]) => {
+      for (const x of xs) {
+        const s = String(x || '').trim().toLowerCase();
+        if (s) weak.add(s);
+      }
+    };
+
+    if (joined.includes('轨迹')) add(['traj', 'trajectory', 'path', 'route', 'routing', 'track']);
+    if (joined.includes('插值')) add(['interp', 'interpol', 'interpolate', 'spline', 'lerp', 'cubic', 'bezier']);
+    if (joined.includes('定位')) add(['localization', 'loc', 'utm', 'gps', 'odom', 'pose']);
+    if (joined.includes('感知')) add(['perception', 'percept', 'lidar', 'radar', 'camera', 'detect']);
+    if (joined.includes('规划')) add(['planning', 'plan', 'route', 'routing', 'speed', 'path']);
+    if (joined.includes('控制')) add(['control', 'pid', 'lqr', 'mpc']);
+    if (joined.includes('决策')) add(['decision', 'policy', 'behavior']);
+    return { strong: [...strong], weak: [...weak] };
+  };
+
+  const scoreText = (haystack: string, spec: { strong: string[]; weak: string[] }) => {
+    const s = String(haystack || '').toLowerCase();
+    let score = 0;
+    for (const t of spec.weak) {
+      if (t && s.includes(t)) score += 1;
+    }
+    for (const t of spec.strong) {
+      if (t && s.includes(t)) score += 4;
+    }
+    return score;
+  };
+
+  const tokenSpec = useMemo(() => buildTokenSpec(query), [query]);
+
+  useEffect(() => {
+    const q = String(query || '').trim();
+    if (!q) {
+      setRagFnScore(new Map());
+      setRagModScore(new Map());
+      return;
+    }
+    let canceled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        const [fnOut, modOut] = await Promise.all([ragQuery(q, 30, null), ragQueryModules(q, 30)]);
+        if (canceled) return;
+        const m1 = new Map<string, number>();
+        for (const h of Array.isArray((fnOut as any).hits) ? ((fnOut as any).hits as any[]) : []) {
+          const fid = String((h as any).function_id || '').trim();
+          if (!fid) continue;
+          const sc = Number((h as any).score || 0);
+          if (Number.isFinite(sc)) m1.set(fid, sc);
+        }
+        const m2 = new Map<string, number>();
+        for (const h of Array.isArray((modOut as any).hits) ? ((modOut as any).hits as RagModuleHit[]) : []) {
+          const mk = String((h as any).module_key || '').trim();
+          if (!mk) continue;
+          const sc = Number((h as any).score || 0);
+          if (Number.isFinite(sc)) m2.set(mk, sc);
+        }
+        setRagFnScore(m1);
+        setRagModScore(m2);
+      } catch {
+      }
+    }, 320);
+    return () => {
+      canceled = true;
+      window.clearTimeout(timer);
+    };
+  }, [query]);
+
+  const filteredFunctions = useMemo(() => {
+    if (!tokenSpec.strong.length && !tokenSpec.weak.length) return functions;
+    const scored = functions
+      .map((fn) => {
+        const zh = cnLabelForFunction(fn);
+        const text = `${zh} ${fn.display_name || ''} ${fn.signature || ''} ${fn.file_path || ''} ${(fn as any).doc_zh || ''} ${(fn as any).doc_en || ''} ${fn.function_id || ''} ${fn.module || ''}`;
+        const lexical = scoreText(text, tokenSpec);
+        const vec = ragFnScore.get(String(fn.function_id || '')) || 0;
+        const total = lexical + (vec > 0 ? vec * 12 : 0);
+        return { fn, score: total, lexical, vec };
+      })
+      .filter((x) => x.score > 0);
+    scored.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (b.vec !== a.vec) return b.vec - a.vec;
+      return String(a.fn.display_name || '').localeCompare(String(b.fn.display_name || ''));
+    });
+    return scored.map((x) => x.fn);
+  }, [functions, tokenSpec, ragFnScore]);
+
+  const filteredModules = useMemo(() => {
+    if (!tokenSpec.strong.length && !tokenSpec.weak.length) return modules;
+    const scored = modules
+      .map((m) => {
+        const zh = cnLabelForModule(m);
+        const text = `${zh} ${m.display_name || ''} ${m.module_key || ''} ${m.root_dir || ''} ${m.entry_function_id || ''} ${m.doc_zh || ''} ${m.doc_en || ''}`;
+        const lexical = scoreText(text, tokenSpec);
+        const vec = ragModScore.get(String(m.module_key || '')) || 0;
+        const total = lexical + (vec > 0 ? vec * 12 : 0);
+        return { m, score: total, vec };
+      })
+      .filter((x) => x.score > 0);
+    scored.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (b.vec !== a.vec) return b.vec - a.vec;
+      return String(a.m.module_key || '').localeCompare(String(b.m.module_key || ''));
+    });
+    return scored.map((x) => x.m);
+  }, [modules, tokenSpec, ragModScore]);
+
   const detectCategoryFromPath = (hint: string) => {
     const s = String(hint || '').toLowerCase();
     if (s.includes('\\control\\') || s.includes('/control/')) return 'control';
@@ -137,6 +351,113 @@ const ComponentLibrary = (props: {
     if (s.includes('\\perception\\') || s.includes('/perception/')) return 'perception';
     if (s.includes('\\planning\\') || s.includes('/planning/')) return 'planning';
     return '';
+  };
+
+  const clampInt = (v: number, min: number, max: number) => {
+    const n = Math.floor(Number(v) || 0);
+    if (n < min) return min;
+    if (n > max) return max;
+    return n;
+  };
+
+  const computeKindTargets = (total: number) => {
+    const n = Math.max(0, Math.floor(total));
+    if (!n) return { glueMin: 0, glueMax: 0, platformMin: 0, platformMax: 0 };
+    const glueMin = clampInt(Math.ceil(n * 0.1), 0, n);
+    const glueMax = clampInt(Math.floor(n * 0.2), glueMin, n);
+    const platformMin = clampInt(Math.ceil(n * 0.1), 0, n);
+    const platformMax = clampInt(Math.floor(n * 0.2), platformMin, n);
+    return { glueMin, glueMax, platformMin, platformMax };
+  };
+
+  const scorePlatformHint = (hint: string) => {
+    const s = String(hint || '').toLowerCase();
+    let score = 0;
+    const bump = (re: RegExp, w: number) => {
+      if (re.test(s)) score += w;
+    };
+    bump(/\b(config|yaml|json|toml|param|flag|option)\b|配置|参数|开关|选项/, 3);
+    bump(/\b(log|logger|metric|monitor|telemetry|trace|span|profil)\b|日志|监控|指标|埋点|追踪/, 3);
+    bump(/\b(file|path|dir|folder|fs|read|write|stream|socket|http|rpc|serial|can)\b|文件|路径|目录|读写|网络|通信|串口|can/, 2);
+    bump(/\b(thread|mutex|lock|atomic|queue|timer|time|clock|sleep|rate)\b|线程|互斥|锁|队列|定时|时间|时钟/, 2);
+    bump(/\b(protobuf|proto|msgpack|serialize|deserialize|encode|decode|base64|crc|hash)\b|序列化|反序列化|编码|解码|校验|哈希/, 2);
+    bump(/\b(util|utils|common|helper|tool|system|os)\b|工具|系统|通用/, 1);
+    return score;
+  };
+
+  const scoreGlueHint = (hint: string, fallbackSub?: string) => {
+    const s = String(hint || '').toLowerCase();
+    let score = 0;
+    const bump = (re: RegExp, w: number) => {
+      if (re.test(s)) score += w;
+    };
+    bump(/\b(transform|tf|quaternion|rotation|euler|yaw|pitch|roll|deg|rad|coordinate|utm|geod|lat|lon|pose|odom|heading|distance|point|vector|map)\b|坐标|经纬度|投影|变换|旋转|四元数|姿态|几何|距离|角度|方位/, 2);
+    bump(/\b(sqrt|sin|cos|tan|asin|acos|atan|pow|exp|log|abs|fmod|clamp|lerp|interpol|dot|cross|matrix)\b|数学|欧几里得|插值|向量|矩阵/, 2);
+    bump(/\b(is_|has_|check|validate|ensure|compare|equal|less|greater|within|inrange)\b|判断|检查|是否|校验|对比|相等|范围/, 1);
+    bump(/\b(convert|parse|format|string|encode|decode|uuid|random)\b|解析|格式化|转换|编码|解码/, 1);
+    if (fallbackSub && fallbackSub !== 'other') score += 2;
+    return score;
+  };
+
+  const rebalanceKinds = <T,>(items: T[], initial: Map<number, 'glue' | 'platform' | 'node'>, glueScore: (x: T) => number, platformScore: (x: T) => number) => {
+    const n = items.length;
+    const { glueMin, glueMax, platformMin, platformMax } = computeKindTargets(n);
+    const kindOf = (idx: number) => initial.get(idx) || 'node';
+    const setKind = (idx: number, k: 'glue' | 'platform' | 'node') => initial.set(idx, k);
+
+    const indices = [...items.keys()];
+    const countKinds = () => {
+      let glue = 0;
+      let platform = 0;
+      let node = 0;
+      for (const i of indices) {
+        const k = kindOf(i);
+        if (k === 'glue') glue += 1;
+        else if (k === 'platform') platform += 1;
+        else node += 1;
+      }
+      return { glue, platform, node };
+    };
+
+    const demote = (from: 'glue' | 'platform', to: 'node', need: number) => {
+      if (need <= 0) return;
+      const pool = indices
+        .filter((i) => kindOf(i) === from)
+        .map((i) => ({ i, s: from === 'glue' ? glueScore(items[i]) : platformScore(items[i]) }))
+        .sort((a, b) => a.s - b.s);
+      for (let j = 0; j < need && j < pool.length; j += 1) {
+        setKind(pool[j].i, to);
+      }
+    };
+
+    const promote = (to: 'glue' | 'platform', need: number) => {
+      if (need <= 0) return;
+      const pool = indices
+        .filter((i) => kindOf(i) === 'node')
+        .map((i) => ({ i, gs: glueScore(items[i]), ps: platformScore(items[i]) }))
+        .sort((a, b) => {
+          const sa = to === 'glue' ? a.gs - a.ps : a.ps - a.gs;
+          const sb = to === 'glue' ? b.gs - b.ps : b.ps - b.gs;
+          return sb - sa;
+        });
+      for (let j = 0; j < need && j < pool.length; j += 1) {
+        setKind(pool[j].i, to);
+      }
+    };
+
+    for (let round = 0; round < 4; round += 1) {
+      const c = countKinds();
+      if (c.glue > glueMax) demote('glue', 'node', c.glue - glueMax);
+      if (c.platform > platformMax) demote('platform', 'node', c.platform - platformMax);
+      const c2 = countKinds();
+      if (c2.glue < glueMin) promote('glue', glueMin - c2.glue);
+      if (c2.platform < platformMin) promote('platform', platformMin - c2.platform);
+      const c3 = countKinds();
+      const ok = c3.glue >= glueMin && c3.glue <= glueMax && c3.platform >= platformMin && c3.platform <= platformMax;
+      if (ok) break;
+    }
+
+    return initial;
   };
 
   const glueSubLabel = (k: string) => {
@@ -252,8 +573,35 @@ const ComponentLibrary = (props: {
     const distributeUnknown: FunctionIndexItem[] = [];
     const glueGroups: Record<string, FunctionIndexItem[]> = { math: [], stmt: [], sys: [], geo: [], other: [] };
 
-    for (const fn of functions) {
-      const kind = String((fn as any).kind || '').toLowerCase();
+    const effectiveKind = (() => {
+      const m = new Map<number, 'glue' | 'platform' | 'node'>();
+      for (let i = 0; i < filteredFunctions.length; i += 1) {
+        const fn = filteredFunctions[i];
+        const backendKind = String((fn as any).kind || '').toLowerCase();
+        if (backendKind === 'glue' || backendKind === 'platform') {
+          m.set(i, backendKind);
+          continue;
+        }
+        const hint = `${fn.display_name} ${fn.signature} ${fn.function_id} ${fn.file_path}`;
+        const sub = classifyGlueSub(fn);
+        const gs = scoreGlueHint(hint, sub);
+        const ps = scorePlatformHint(hint);
+        if (ps >= 4 && ps > gs) m.set(i, 'platform');
+        else if (gs >= 4 && gs >= ps) m.set(i, 'glue');
+        else m.set(i, 'node');
+      }
+
+      return rebalanceKinds(
+        filteredFunctions as FunctionIndexItem[],
+        m,
+        (fn: FunctionIndexItem) => scoreGlueHint(`${fn.display_name} ${fn.signature} ${fn.function_id} ${fn.file_path}`, classifyGlueSub(fn)),
+        (fn: FunctionIndexItem) => scorePlatformHint(`${fn.display_name} ${fn.signature} ${fn.function_id} ${fn.file_path}`)
+      );
+    })();
+
+    for (let i = 0; i < filteredFunctions.length; i += 1) {
+      const fn = filteredFunctions[i];
+      const kind = effectiveKind.get(i) || 'node';
       if (kind === 'glue') {
         baseGlue.push(fn);
         glueGroups[classifyGlueSub(fn)].push(fn);
@@ -290,8 +638,60 @@ const ComponentLibrary = (props: {
       }
     }
 
+    const ensureNodeCategoryMinPercent = () => {
+      const buckets: Array<keyof typeof feature> = ['control', 'decision', 'localization', 'perception', 'planning'];
+      const totalNode = (Object.values(feature) as FunctionIndexItem[][]).reduce((s, a) => s + a.length, 0);
+      if (!totalNode) return;
+      const minEach = Math.max(1, Math.floor(totalNode * 0.05) + 1);
+
+      const pool: FunctionIndexItem[] = [...feature.other];
+      feature.other = [];
+
+      const deficitOf = (k: keyof typeof feature) => Math.max(0, minEach - feature[k].length);
+
+      for (let round = 0; round < 5; round += 1) {
+        let moved = 0;
+        for (const k of buckets) {
+          let need = deficitOf(k);
+          while (need > 0 && pool.length) {
+            const x = pool.shift();
+            if (!x) break;
+            feature[k].push(x);
+            moved += 1;
+            need -= 1;
+          }
+        }
+
+        for (const k of buckets) {
+          let need = deficitOf(k);
+          if (need <= 0) continue;
+          const donors = [...buckets]
+            .map((d) => ({ d, surplus: feature[d].length - minEach }))
+            .filter((x) => x.surplus > 0)
+            .sort((a, b) => b.surplus - a.surplus);
+
+          for (const donor of donors) {
+            if (need <= 0) break;
+            while (need > 0 && feature[donor.d].length > minEach) {
+              const x = feature[donor.d].pop();
+              if (!x) break;
+              feature[k].push(x);
+              moved += 1;
+              need -= 1;
+            }
+          }
+        }
+
+        if (!moved) break;
+      }
+
+      feature.other = pool;
+    };
+
+    ensureNodeCategoryMinPercent();
+
     return { baseGlue, basePlatform, feature, glueGroups };
-  }, [functions]);
+  }, [filteredFunctions]);
 
   const groupModules = useMemo(() => {
     const baseCandidates: Array<{ m: RagIndexedModuleItem; kind: 'glue' | 'platform' }> = [];
@@ -411,6 +811,57 @@ const ComponentLibrary = (props: {
       return '';
     };
 
+    const scoreModulePlatform = (m: RagIndexedModuleItem) => {
+      const hint = `${m.module_key} ${m.display_name} ${m.doc_zh} ${m.root_dir}`;
+      return scorePlatformHint(hint);
+    };
+
+    const scoreModuleGlue = (m: RagIndexedModuleItem) => {
+      let glue = 0;
+      let platform = 0;
+      let total = 0;
+      try {
+        const nodes = JSON.parse(String(m.nodes_json || '[]')) as any;
+        if (Array.isArray(nodes)) {
+          for (const n of nodes) {
+            const k = String(n?.kind || '').toLowerCase();
+            if (!k) continue;
+            total += 1;
+            if (k === 'glue') glue += 1;
+            if (k === 'platform') platform += 1;
+          }
+        }
+      } catch {
+      }
+      const frac = total ? glue / total : 0;
+      const frac2 = total ? platform / total : 0;
+      const hint = `${m.module_key} ${m.display_name} ${m.doc_zh} ${m.root_dir}`;
+      const base = detectBaseBucket(hint);
+      let score = Math.round(frac * 10);
+      if (base === 'glue') score += 3;
+      if (frac2 >= 0.5) score -= 2;
+      return score;
+    };
+
+    const effectiveKind = (() => {
+      const m = new Map<number, 'glue' | 'platform' | 'node'>();
+      for (let i = 0; i < filteredModules.length; i += 1) {
+        const x = filteredModules[i];
+        const kind = pickKindForModule(x) || detectBaseBucket(`${x.module_key} ${x.display_name} ${x.doc_zh} ${x.root_dir}`);
+        if (kind === 'glue' || kind === 'platform') {
+          m.set(i, kind === 'glue' && shouldTreatGlueAsPlatform(x) ? 'platform' : kind);
+          continue;
+        }
+        const ps = scoreModulePlatform(x);
+        const gs = scoreModuleGlue(x);
+        if (ps >= 4 && ps > gs) m.set(i, 'platform');
+        else if (gs >= 4 && gs >= ps) m.set(i, shouldTreatGlueAsPlatform(x) ? 'platform' : 'glue');
+        else m.set(i, 'node');
+      }
+
+      return rebalanceKinds(filteredModules, m, scoreModuleGlue, scoreModulePlatform);
+    })();
+
     const fillToMinimum = (dst: RagIndexedModuleItem[], pool: RagIndexedModuleItem[], min: number) => {
       if (dst.length >= min) return;
       while (dst.length < min && pool.length) {
@@ -420,8 +871,9 @@ const ComponentLibrary = (props: {
       }
     };
 
-    for (const m of modules) {
-      const kind = pickKindForModule(m) || detectBaseBucket(`${m.module_key} ${m.display_name} ${m.doc_zh} ${m.root_dir}`);
+    for (let i = 0; i < filteredModules.length; i += 1) {
+      const m = filteredModules[i];
+      const kind = effectiveKind.get(i) || 'node';
       if (kind === 'glue') {
         baseCandidates.push({ m, kind: 'glue' });
         continue;
@@ -439,40 +891,25 @@ const ComponentLibrary = (props: {
       feature[key].push(m);
     }
 
-    const capBase = 50;
-    const baseSorted = [...baseCandidates]
-      .sort((a, b) => {
-        const ta = Date.parse(String(a.m.updated_at || '')) || 0;
-        const tb = Date.parse(String(b.m.updated_at || '')) || 0;
-        if (tb !== ta) return tb - ta;
-        return String(a.m.module_key || '').localeCompare(String(b.m.module_key || ''));
-      });
-    const chosen = baseSorted.slice(0, capBase);
-    const chosenKey = new Set(chosen.map((x) => x.m.module_key));
+    const baseSorted = [...baseCandidates].sort((a, b) => {
+      const ta = Date.parse(String(a.m.updated_at || '')) || 0;
+      const tb = Date.parse(String(b.m.updated_at || '')) || 0;
+      if (tb !== ta) return tb - ta;
+      return String(a.m.module_key || '').localeCompare(String(b.m.module_key || ''));
+    });
+
     const baseGlue: RagIndexedModuleItem[] = [];
     const basePlatform: RagIndexedModuleItem[] = [];
     const platformGroups: Record<string, RagIndexedModuleItem[]> = { sys: [], config: [], log: [], io: [], time: [], ser: [], other: [] };
 
-    for (const x of chosen) {
+    for (const x of baseSorted) {
       const m = x.m;
-      const isPlatform = x.kind === 'platform' || (x.kind === 'glue' && shouldTreatGlueAsPlatform(m));
-      if (isPlatform) {
+      if (x.kind === 'platform') {
         basePlatform.push(m);
         platformGroups[classifyPlatformSub(m)].push(m);
       } else {
         baseGlue.push(m);
       }
-    }
-
-    for (const x of baseSorted.slice(capBase)) {
-      const m = x.m;
-      if (!m || chosenKey.has(m.module_key)) continue;
-      const cat = pickCategoryForModule(m);
-      const key =
-        cat === 'control' || cat === 'decision' || cat === 'localization' || cat === 'perception' || cat === 'planning'
-          ? cat
-          : 'other';
-      feature[key].push(m);
     }
 
     const otherPool = [...feature.other];
@@ -485,14 +922,14 @@ const ComponentLibrary = (props: {
     feature.other = otherPool;
 
     return { baseGlue, basePlatform, platformGroups, platformSubLabel, feature };
-  }, [modules]);
+  }, [filteredModules]);
 
-  const loadAll = async <T,>(loader: (p: { q?: string; limit: number; offset: number }) => Promise<{ total: number; items: T[] }>) => {
+  const loadAll = async <T,>(loader: (p: { limit: number; offset: number }) => Promise<{ total: number; items: T[] }>) => {
     const limit = 1000;
     let offset = 0;
     const items: T[] = [];
     for (let i = 0; i < 50; i += 1) {
-      const r = await loader({ q: query || undefined, limit, offset });
+      const r = await loader({ limit, offset });
       const got = Array.isArray((r as any).items) ? (r as any).items : [];
       items.push(...got);
       const total = Number((r as any).total || items.length);
@@ -508,34 +945,39 @@ const ComponentLibrary = (props: {
     try {
       const useCache = !opts?.force && !query.trim();
       if (useCache) {
-        const cachedFns = readCache<FunctionIndexItem>(cacheKeyFns);
-        const cachedMods = readCache<RagIndexedModuleItem>(cacheKeyMods);
-        if (cachedFns?.items?.length) setFunctions(cachedFns.items);
-        if (cachedMods?.items?.length) setModules(cachedMods.items);
-        const hasCache = Boolean(cachedFns?.items?.length || cachedMods?.items?.length);
-        if (hasCache) setLoading(false);
-
-        if (cachedFns && cachedMods) {
-          const [headFns, headMods] = await Promise.all([
-            ragListFunctions({ limit: 1, offset: 0 }),
-            ragListIndexedModules({ limit: 1, offset: 0 })
+        try {
+          const [cachedFns, cachedMods] = await Promise.all([
+            libraryCache.getFunctions<FunctionIndexItem>(cacheScope),
+            libraryCache.getModules<RagIndexedModuleItem>(cacheScope)
           ]);
-          const sameTotal = Number(headFns.total) === Number(cachedFns.total) && Number(headMods.total) === Number(cachedMods.total);
-          if (sameTotal) return;
+          if (cachedFns?.items?.length) setFunctions(cachedFns.items);
+          if (cachedMods?.items?.length) setModules(cachedMods.items);
+          const hasCache = Boolean((cachedFns?.items?.length || 0) > 0 || (cachedMods?.items?.length || 0) > 0);
+          if (hasCache) setLoading(false);
+
+          if (cachedFns && cachedMods) {
+            const [headFns, headMods] = await Promise.all([
+              ragListFunctions({ limit: 1, offset: 0 }),
+              ragListIndexedModules({ limit: 1, offset: 0 })
+            ]);
+            const sameTotal = Number(headFns.total) === Number(cachedFns.total) && Number(headMods.total) === Number(cachedMods.total);
+            if (sameTotal) return;
+          }
+        } catch {
         }
       }
 
       const hasAny = Boolean(functions.length || modules.length);
       if (!hasAny) setLoading(true);
       const [fns, mods] = await Promise.all([
-        loadAll<FunctionIndexItem>(({ q, limit, offset }) => ragListFunctions({ q, limit, offset }) as any),
-        loadAll<RagIndexedModuleItem>(({ q, limit, offset }) => ragListIndexedModules({ q, limit, offset }) as any)
+        loadAll<FunctionIndexItem>(({ limit, offset }) => ragListFunctions({ limit, offset }) as any),
+        loadAll<RagIndexedModuleItem>(({ limit, offset }) => ragListIndexedModules({ limit, offset }) as any)
       ]);
       setFunctions(fns.items);
       setModules(mods.items);
       if (!query.trim()) {
-        writeCache(cacheKeyFns, { total: fns.items.length, items: fns.items });
-        writeCache(cacheKeyMods, { total: mods.items.length, items: mods.items });
+        void libraryCache.setFunctions<FunctionIndexItem>(cacheScope, { total: fns.items.length, items: fns.items, savedAt: Date.now() });
+        void libraryCache.setModules<RagIndexedModuleItem>(cacheScope, { total: mods.items.length, items: mods.items, savedAt: Date.now() });
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : '加载失败');
@@ -551,7 +993,7 @@ const ComponentLibrary = (props: {
       const key = 'gaasd:rag:repairModuleFromPath:done';
       if (localStorage.getItem(key) === '1') return;
       localStorage.setItem(key, '1');
-      void ragRepairModuleFromPath(props.rootDir || null).then(() => {
+      void ragRepairModuleFromPath(null).then(() => {
         if (!query.trim()) void loadLibraryData();
       });
     } catch {
@@ -563,7 +1005,7 @@ const ComponentLibrary = (props: {
       void loadLibraryData();
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [query]);
+  }, []);
 
   return (
     <div className="h-full flex flex-col bg-white overflow-hidden">
@@ -603,7 +1045,9 @@ const ComponentLibrary = (props: {
         {!!error && <div className="px-2 py-2 text-xs text-red-600">{error}</div>}
         {activeTab === 'function' ? (
           <>
-            <div className="px-2 py-1 text-[10px] text-gray-500">已索引函数：{functions.length}</div>
+            <div className="px-2 py-1 text-[10px] text-gray-500">
+              已索引函数：{functions.length}{(tokenSpec.strong.length || tokenSpec.weak.length) ? `，匹配：${filteredFunctions.length}` : ''}
+            </div>
             {functions.length === 0 && !loading ? (
               <div className="p-2 text-xs text-gray-500 text-center">暂无已索引函数</div>
             ) : (
@@ -640,7 +1084,7 @@ const ComponentLibrary = (props: {
                             )}
                           >
                             <LayoutGrid className="w-3 h-3 shrink-0" />
-                            <span className="truncate">{fn.display_name || fn.function_id}</span>
+                            <span className="truncate" title={fn.display_name || fn.function_id}>{cnLabelForFunction(fn)}</span>
                           </button>
                         ))}
                       </TreeItem>
@@ -675,16 +1119,16 @@ const ComponentLibrary = (props: {
                         )}
                       >
                         <LayoutGrid className="w-3 h-3 shrink-0" />
-                        <span className="truncate">{fn.display_name || fn.function_id}</span>
+                        <span className="truncate" title={fn.display_name || fn.function_id}>{cnLabelForFunction(fn)}</span>
                       </button>
                     ))}
                   </TreeItem>
                 </TreeItem>
                 <TreeItem
-                  label={`功能模块库 (${Object.values(groupFunctions.feature).reduce((s, a) => s + a.length, 0)})`}
+                  label={`功能模块库 (${(Object.values(groupFunctions.feature) as FunctionIndexItem[][]).reduce((s, a) => s + a.length, 0)})`}
                   defaultOpen={true}
                 >
-                  <TreeItem label={`node关键算法 (${Object.values(groupFunctions.feature).reduce((s, a) => s + a.length, 0)})`} defaultOpen={true}>
+                  <TreeItem label={`node关键算法 (${(Object.values(groupFunctions.feature) as FunctionIndexItem[][]).reduce((s, a) => s + a.length, 0)})`} defaultOpen={true}>
                     {(['control', 'decision', 'localization', 'perception', 'planning', 'other'] as const).map((k) => (
                       <TreeItem key={k} label={`${featureLabel(k)} (${groupFunctions.feature[k].length})`} defaultOpen={false}>
                         {groupFunctions.feature[k].map((fn) => (
@@ -715,7 +1159,7 @@ const ComponentLibrary = (props: {
                             )}
                           >
                             <LayoutGrid className="w-3 h-3 shrink-0" />
-                            <span className="truncate">{fn.display_name || fn.function_id}</span>
+                            <span className="truncate" title={fn.display_name || fn.function_id}>{cnLabelForFunction(fn)}</span>
                           </button>
                         ))}
                       </TreeItem>
@@ -727,7 +1171,9 @@ const ComponentLibrary = (props: {
           </>
         ) : (
           <>
-            <div className="px-2 py-1 text-[10px] text-gray-500">已索引模块：{modules.length}</div>
+            <div className="px-2 py-1 text-[10px] text-gray-500">
+              已索引模块：{modules.length}{(tokenSpec.strong.length || tokenSpec.weak.length) ? `，匹配：${filteredModules.length}` : ''}
+            </div>
             {modules.length === 0 && !loading ? (
               <div className="p-2 text-xs text-gray-500 text-center">暂无已索引模块</div>
             ) : (
@@ -758,7 +1204,7 @@ const ComponentLibrary = (props: {
                         )}
                       >
                         <LayoutList className="w-3 h-3 shrink-0" />
-                        <span className="truncate">{`${m.display_name || m.module_key} (${m.node_count}/${m.edge_count})`}</span>
+                        <span className="truncate" title={m.display_name || m.module_key}>{`${cnLabelForModule(m)} (${m.node_count}/${m.edge_count})`}</span>
                       </button>
                     ))}
                   </TreeItem>
@@ -793,7 +1239,7 @@ const ComponentLibrary = (props: {
                             )}
                           >
                             <LayoutList className="w-3 h-3 shrink-0" />
-                            <span className="truncate">{`${m.display_name || m.module_key} (${m.node_count}/${m.edge_count})`}</span>
+                            <span className="truncate" title={m.display_name || m.module_key}>{`${cnLabelForModule(m)} (${m.node_count}/${m.edge_count})`}</span>
                           </button>
                         ))}
                       </TreeItem>
@@ -801,10 +1247,10 @@ const ComponentLibrary = (props: {
                   </TreeItem>
                 </TreeItem>
                 <TreeItem
-                  label={`功能模块库 (${Object.values(groupModules.feature).reduce((s, a) => s + a.length, 0)})`}
+                  label={`功能模块库 (${(Object.values(groupModules.feature) as RagIndexedModuleItem[][]).reduce((s, a) => s + a.length, 0)})`}
                   defaultOpen={true}
                 >
-                  <TreeItem label={`node关键算法 (${Object.values(groupModules.feature).reduce((s, a) => s + a.length, 0)})`} defaultOpen={true}>
+                  <TreeItem label={`node关键算法 (${(Object.values(groupModules.feature) as RagIndexedModuleItem[][]).reduce((s, a) => s + a.length, 0)})`} defaultOpen={true}>
                     {(['control', 'decision', 'localization', 'perception', 'planning', 'other'] as const).map((k) => (
                       <TreeItem key={k} label={`${featureLabel(k)} (${groupModules.feature[k].length})`} defaultOpen={false}>
                         {groupModules.feature[k].map((m) => (
@@ -831,7 +1277,7 @@ const ComponentLibrary = (props: {
                             )}
                           >
                             <LayoutList className="w-3 h-3 shrink-0" />
-                            <span className="truncate">{`${m.display_name || m.module_key} (${m.node_count}/${m.edge_count})`}</span>
+                            <span className="truncate" title={m.display_name || m.module_key}>{`${cnLabelForModule(m)} (${m.node_count}/${m.edge_count})`}</span>
                           </button>
                         ))}
                       </TreeItem>
@@ -985,24 +1431,279 @@ function normalizeNodeStatus(v: any): 'clean' | 'editing' | 'modified' {
   return 'clean';
 }
 
-function parseFieldNames(v: string) {
+type FieldDefLite = { name: string; type: string; required: boolean };
+
+function parseFieldDefs(v: string): FieldDefLite[] {
   try {
     const obj = JSON.parse(String(v || '{}'));
     const fs = Array.isArray(obj?.fields) ? obj.fields : [];
-    return fs.map((x: any) => String(x?.name || '').trim()).filter(Boolean);
+    if (fs.length) {
+      return fs
+        .map((x: any) => ({
+          name: String(x?.name || '').trim(),
+          type: String(x?.type || '').trim(),
+          required: Boolean(x?.required)
+        }))
+        .filter((x: FieldDefLite) => x.name);
+    }
+
+    if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+      const entries = Object.entries(obj as Record<string, any>);
+      return entries
+        .map(([k, val]) => {
+          const name = String(k || '').trim();
+          if (!name) return null;
+          if (val && typeof val === 'object' && !Array.isArray(val)) {
+            const t = String((val as any)?.type || (val as any)?.dtype || '').trim();
+            const required = Boolean((val as any)?.required);
+            return { name, type: t, required } as FieldDefLite;
+          }
+          const t = typeof val === 'string' ? String(val).trim() : '';
+          return { name, type: t, required: false } as FieldDefLite;
+        })
+        .filter(Boolean) as FieldDefLite[];
+    }
+    return [];
   } catch {
     return [];
   }
 }
 
-function ioMatchScoreSimple(outJson: string, inJson: string) {
-  const outNames = parseFieldNames(outJson);
-  const inNames = parseFieldNames(inJson);
-  const sharedNames = outNames.filter((n) => inNames.includes(n));
-  return { sharedNames, score: sharedNames.length };
+function parseFieldNames(v: string) {
+  return parseFieldDefs(v).map((x) => x.name);
 }
 
-const Canvas = (props: {
+function safeParseJson(v: string) {
+  try {
+    const obj = JSON.parse(String(v || ''));
+    return obj && typeof obj === 'object' ? obj : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeType(v: string) {
+  const s = String(v || '').trim().toLowerCase();
+  if (!s) return '';
+  if (s === 'int' || s === 'int32' || s === 'int32_t') return 'int';
+  if (s === 'uint' || s === 'uint32' || s === 'uint32_t') return 'uint';
+  if (s === 'float' || s === 'double' || s === 'number') return 'number';
+  if (s === 'bool' || s === 'boolean') return 'bool';
+  if (s === 'string' || s === 'std::string') return 'string';
+  return s;
+}
+
+function typeCompatible(a: string, b: string) {
+  const ta = normalizeType(a);
+  const tb = normalizeType(b);
+  if (!ta || !tb) return true;
+  if (ta === tb) return true;
+  if ((ta === 'int' || ta === 'uint' || ta === 'number') && (tb === 'int' || tb === 'uint' || tb === 'number')) return true;
+  return false;
+}
+
+function ioMatchScoreSimple(outJson: string, inJson: string) {
+  const outs = parseFieldDefs(outJson);
+  const ins = parseFieldDefs(inJson);
+  const inMap = new Map(ins.map((x) => [x.name, x] as const));
+  const sharedNames = outs
+    .filter((o) => {
+      const t = inMap.get(o.name);
+      if (!t) return false;
+      return typeCompatible(o.type, t.type);
+    })
+    .map((x) => x.name);
+  return { sharedNames, score: sharedNames.length, outs, ins };
+}
+
+function normalizeTypeExact(v: string) {
+  let s = String(v || '').trim();
+  if (!s) return '';
+  s = s.replace(/[\s\u0000-\u001f]+/g, ' ');
+  s = s.replace(/\s*::\s*/g, '::');
+  s = s.replace(/\s*<\s*/g, '<');
+  s = s.replace(/\s*>\s*/g, '>');
+  s = s.replace(/\s*,\s*/g, ',');
+  s = s.replace(/\s*\*\s*/g, '*');
+  s = s.replace(/\s*&\s*/g, '&');
+  s = s.replace(/\s*&&\s*/g, '&&');
+  s = s.replace(/\s*\[\s*/g, '[');
+  s = s.replace(/\s*\]\s*/g, ']');
+  return s.trim();
+}
+
+function strictTypeEqual(a: string, b: string) {
+  const ta = normalizeTypeExact(a);
+  const tb = normalizeTypeExact(b);
+  if (!ta || !tb) return false;
+  return ta === tb;
+}
+
+function splitTopLevelArgs(text: string, sep: string) {
+  const out: string[] = [];
+  const s = String(text || '');
+  let buf = '';
+  let angle = 0;
+  let paren = 0;
+  let bracket = 0;
+  let brace = 0;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === '<') angle++;
+    else if (ch === '>') angle = Math.max(0, angle - 1);
+    else if (ch === '(') paren++;
+    else if (ch === ')') paren = Math.max(0, paren - 1);
+    else if (ch === '[') bracket++;
+    else if (ch === ']') bracket = Math.max(0, bracket - 1);
+    else if (ch === '{') brace++;
+    else if (ch === '}') brace = Math.max(0, brace - 1);
+
+    if (ch === sep && angle === 0 && paren === 0 && bracket === 0 && brace === 0) {
+      out.push(buf);
+      buf = '';
+      continue;
+    }
+    buf += ch;
+  }
+  if (buf) out.push(buf);
+  return out;
+}
+
+function stripDefaultValue(param: string) {
+  const s = String(param || '');
+  let angle = 0;
+  let paren = 0;
+  let bracket = 0;
+  let brace = 0;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === '<') angle++;
+    else if (ch === '>') angle = Math.max(0, angle - 1);
+    else if (ch === '(') paren++;
+    else if (ch === ')') paren = Math.max(0, paren - 1);
+    else if (ch === '[') bracket++;
+    else if (ch === ']') bracket = Math.max(0, bracket - 1);
+    else if (ch === '{') brace++;
+    else if (ch === '}') brace = Math.max(0, brace - 1);
+    if (ch === '=' && angle === 0 && paren === 0 && bracket === 0 && brace === 0) {
+      return s.slice(0, i).trim();
+    }
+  }
+  return s.trim();
+}
+
+function parseCppSignatureIO(signature: string): { params: Array<{ name: string; type: string }>; returns: Array<{ name: string; type: string }> } {
+  const sig = String(signature || '').trim();
+  if (!sig) return { params: [], returns: [] };
+
+  const openIdx = sig.indexOf('(');
+  if (openIdx < 0) return { params: [], returns: [] };
+
+  let closeIdx = -1;
+  let angle = 0;
+  let paren = 0;
+  for (let i = openIdx; i < sig.length; i++) {
+    const ch = sig[i];
+    if (ch === '<') angle++;
+    else if (ch === '>') angle = Math.max(0, angle - 1);
+    else if (ch === '(') paren++;
+    else if (ch === ')') {
+      paren = Math.max(0, paren - 1);
+      if (paren === 0 && angle === 0) {
+        closeIdx = i;
+        break;
+      }
+    }
+  }
+  if (closeIdx < 0) closeIdx = sig.lastIndexOf(')');
+  if (closeIdx < 0) return { params: [], returns: [] };
+
+  const head = sig.slice(0, openIdx).trim();
+  const argsRaw = sig.slice(openIdx + 1, closeIdx).trim();
+
+  const headNameEnd = head.length;
+  let nameStart = -1;
+  for (let i = headNameEnd - 1; i >= 0; i--) {
+    if (/\s/.test(head[i])) {
+      nameStart = i + 1;
+      break;
+    }
+  }
+  if (nameStart < 0) nameStart = 0;
+  const retRaw = head.slice(0, Math.max(0, nameStart - 1)).trim();
+  const returnType = retRaw || 'void';
+
+  const params: Array<{ name: string; type: string }> = [];
+  if (argsRaw && argsRaw !== 'void') {
+    const items = splitTopLevelArgs(argsRaw, ',')
+      .map((x) => stripDefaultValue(x).trim())
+      .filter(Boolean)
+      .filter((x) => x !== '...');
+
+    for (let idx = 0; idx < items.length; idx++) {
+      const it = items[idx];
+      const lastWs = (() => {
+        for (let i = it.length - 1; i >= 0; i--) if (/\s/.test(it[i])) return i;
+        return -1;
+      })();
+      if (lastWs < 0) {
+        params.push({ name: `arg${idx + 1}`, type: it });
+        continue;
+      }
+      const tail = it.slice(lastWs + 1).trim();
+      const headType = it.slice(0, lastWs).trim();
+      const isName = /^[A-Za-z_][A-Za-z0-9_]*$/.test(tail);
+      if (isName && headType) {
+        params.push({ name: tail, type: headType });
+      } else {
+        params.push({ name: `arg${idx + 1}`, type: it });
+      }
+    }
+  }
+
+  const returns: Array<{ name: string; type: string }> = [];
+  if (String(returnType).trim() && String(returnType).trim() !== 'void') {
+    returns.push({ name: 'return', type: returnType });
+  }
+  return { params, returns };
+}
+
+function buildStrictPortTypeMaps(n: CanvasNodeItem) {
+  const inMap = new Map<string, string>();
+  const outMap = new Map<string, string>();
+
+  if (n.kind === 'function') {
+    const io = parseCppSignatureIO(String(n.signature || ''));
+    for (const p of io.params) {
+      const name = String(p.name || '').trim();
+      const type = String(p.type || '').trim();
+      if (name && type) {
+        inMap.set(name, type);
+        outMap.set(name, type);
+      }
+    }
+    for (const r of io.returns) {
+      const name = String(r.name || '').trim();
+      const type = String(r.type || '').trim();
+      if (name && type) outMap.set(name, type);
+    }
+    return { inMap, outMap, inTypes: Array.from(inMap.values()), outTypes: Array.from(outMap.values()) };
+  }
+
+  for (const f of parseFieldDefs(n.inputsJson)) {
+    const name = String(f.name || '').trim();
+    const type = String(f.type || '').trim();
+    if (name && type) inMap.set(name, type);
+  }
+  for (const f of parseFieldDefs(n.outputsJson)) {
+    const name = String(f.name || '').trim();
+    const type = String(f.type || '').trim();
+    if (name && type) outMap.set(name, type);
+  }
+  return { inMap, outMap, inTypes: Array.from(inMap.values()), outTypes: Array.from(outMap.values()) };
+}
+
+type CanvasProps = {
   projectId: string;
   rootDir: string;
   injectModuleKey: string | null;
@@ -1025,7 +1726,18 @@ const Canvas = (props: {
   onExportModule?: (payload: { canvasId: string; canvasName: string; nodes: CanvasNodeItem[]; edges: CanvasEdgeItem[] }) => void;
   injectReusePayload?: { functions: any[]; modules: any[] } | null;
   injectReuseSignal?: number;
-}) => {
+  onUpsertGeneratedFunction?: (fn: {
+    function_id: string;
+    display_name: string;
+    signature: string;
+    module: string;
+    doc_zh: string;
+    doc_en?: string;
+    code: string;
+  }) => void;
+};
+
+const Canvas: React.FC<CanvasProps> = (props) => {
   const NODE_W = 180;
   const NODE_H = 52;
   const asFiniteNumber = (v: any, fallback = 0) => {
@@ -1047,6 +1759,14 @@ const Canvas = (props: {
   const [moduleExpanded, setModuleExpanded] = useState<Record<string, boolean>>({});
   const [moduleChildrenCache, setModuleChildrenCache] = useState<Record<string, { nodes: CanvasNodeItem[]; edges: CanvasEdgeItem[] }>>({});
   const [connectDrag, setConnectDrag] = useState<{ fromId: string; fromPort?: string; toX: number; toY: number } | null>(null);
+  const [gluePanel, setGluePanel] = useState<{
+    fromId: string;
+    toId: string;
+    fromPort?: string;
+    toPort?: string;
+  } | null>(null);
+  const [glueBusy, setGlueBusy] = useState(false);
+  const [glueError, setGlueError] = useState('');
   const [nodeMenu, setNodeMenu] = useState<{ x: number; y: number; nodeId: string } | null>(null);
   const [edgeMenu, setEdgeMenu] = useState<{ x: number; y: number; edgeId: string } | null>(null);
   const [viewport, setViewport] = useState({ x: 0, y: 0, scale: 1 });
@@ -1672,7 +2392,6 @@ const Canvas = (props: {
 
   useEffect(() => {
     const sig = Number(props.importGraphSignal || 0);
-    if (!sig) return;
     const g = props.importGraphPayload;
     if (!g) return;
     setViewMode('graph');
@@ -1756,7 +2475,7 @@ const Canvas = (props: {
     };
     setViewport({ x: 0, y: 0, scale: 1 });
     setFitToCenterSignal((v) => v + 1);
-  }, [props.importGraphSignal]);
+  }, [props.importGraphSignal, props.importGraphPayload]);
 
   useEffect(() => {
     if (!canvasMenu && !nodeMenu && !edgeMenu) return;
@@ -1911,6 +2630,7 @@ const Canvas = (props: {
       const ns = nodes.filter((n) => n.canvasId === activeCanvasId);
       if (!ns.length) {
         setViewport({ x: 0, y: 0, scale: 1 });
+        setFitToCenterSignal(0);
         return;
       }
       let minX = Infinity;
@@ -1928,14 +2648,16 @@ const Canvas = (props: {
       }
       if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
         setViewport({ x: 0, y: 0, scale: 1 });
+        setFitToCenterSignal(0);
         return;
       }
       const cx = (minX + maxX) / 2;
       const cy = (minY + maxY) / 2;
       const scale = 1;
       setViewport({ scale, x: rect.width / 2 - cx * scale, y: rect.height / 2 - cy * scale });
+      setFitToCenterSignal(0);
     });
-  }, [fitToCenterSignal, nodes, activeCanvasId, portCache, contentBounds.ox, contentBounds.oy]);
+  }, [fitToCenterSignal]);
 
   const autoLayoutNodes = () => {
     const all = activeNodes;
@@ -2194,10 +2916,79 @@ const Canvas = (props: {
     const from = nodeById.get(fromId);
     const to = nodeById.get(toId);
     if (!from || !to) return;
-    const m = ioMatchScoreSimple(from.outputsJson, to.inputsJson);
+
+    const fromIO = buildStrictPortTypeMaps(from);
+    const toIO = buildStrictPortTypeMaps(to);
+    const hasTypeInfo = fromIO.outTypes.length > 0 && toIO.inTypes.length > 0;
+
+    const findAnyTypeMatch = () => {
+      for (const ot of fromIO.outTypes) {
+        for (const it of toIO.inTypes) {
+          if (strictTypeEqual(ot, it)) return true;
+        }
+      }
+      return false;
+    };
+
+    const tryPickPairByType = (preferredOut?: string, preferredIn?: string) => {
+      const po = String(preferredOut || '').trim();
+      const pi = String(preferredIn || '').trim();
+
+      if (po && pi) {
+        const ot = fromIO.outMap.get(po);
+        const it = toIO.inMap.get(pi);
+        if (ot && it && strictTypeEqual(ot, it)) return { fp: po, tp: pi };
+        return null;
+      }
+      if (po) {
+        const ot = fromIO.outMap.get(po);
+        if (!ot) return null;
+        for (const [k, v] of toIO.inMap.entries()) {
+          if (strictTypeEqual(ot, v)) return { fp: po, tp: k };
+        }
+        return null;
+      }
+      if (pi) {
+        const it = toIO.inMap.get(pi);
+        if (!it) return null;
+        for (const [k, v] of fromIO.outMap.entries()) {
+          if (strictTypeEqual(v, it)) return { fp: k, tp: pi };
+        }
+        return null;
+      }
+
+      for (const [ok, ov] of fromIO.outMap.entries()) {
+        for (const [ik, iv] of toIO.inMap.entries()) {
+          if (strictTypeEqual(ov, iv)) return { fp: ok, tp: ik };
+        }
+      }
+      return null;
+    };
+
+    if (hasTypeInfo && !findAnyTypeMatch()) {
+      setGlueError('类型不匹配，无法直接连接。请生成胶水函数完成转换，或使用直连。');
+      setGluePanel({ fromId, toId, fromPort, toPort });
+      return;
+    }
+
     if (fromPort || toPort) {
-      const fp = fromPort || m.sharedNames[0] || undefined;
-      const tp = toPort || fp || undefined;
+      let fp: string | undefined;
+      let tp: string | undefined;
+
+      const picked = tryPickPairByType(fromPort, toPort);
+      if (picked) {
+        fp = picked.fp;
+        tp = picked.tp;
+      } else {
+        if (hasTypeInfo) {
+          setGlueError('类型不匹配，无法直接连接。请生成胶水函数完成转换，或使用直连。');
+          setGluePanel({ fromId, toId, fromPort, toPort });
+          return;
+        }
+        fp = fromPort || undefined;
+        tp = toPort || undefined;
+      }
+
       setEdges((prev) => [
         ...prev,
         {
@@ -2213,10 +3004,9 @@ const Canvas = (props: {
       setNodeStatus(toId, 'modified');
       return;
     }
-    if (m.sharedNames.length > 0) {
-      const chosen = m.sharedNames[0];
-      const fp = fromPort || chosen;
-      const tp = toPort || fp;
+
+    const chosenPair = tryPickPairByType();
+    if (chosenPair) {
       setEdges((prev) => [
         ...prev,
         {
@@ -2224,8 +3014,8 @@ const Canvas = (props: {
           canvasId: activeCanvasId,
           from: fromId,
           to: toId,
-          fromPort: fp,
-          toPort: tp
+          fromPort: chosenPair.fp,
+          toPort: chosenPair.tp
         }
       ]);
       setNodeStatus(fromId, 'modified');
@@ -2243,6 +3033,172 @@ const Canvas = (props: {
     ]);
     setNodeStatus(fromId, 'modified');
     setNodeStatus(toId, 'modified');
+  };
+
+  const directConnectNodes = (fromId: string, toId: string, fromPort?: string, toPort?: string) => {
+    if (fromId === toId) return;
+    if (activeEdges.some((e) => e.from === fromId && e.to === toId && (e.fromPort || '') === (fromPort || '') && (e.toPort || '') === (toPort || ''))) return;
+    const from = nodeById.get(fromId);
+    const to = nodeById.get(toId);
+    if (!from || !to) return;
+    setEdges((prev) => [
+      ...prev,
+      {
+        id: Math.random().toString(36).slice(2, 10),
+        canvasId: activeCanvasId,
+        from: fromId,
+        to: toId,
+        fromPort: fromPort || undefined,
+        toPort: toPort || undefined
+      }
+    ]);
+    setNodeStatus(fromId, 'modified');
+    setNodeStatus(toId, 'modified');
+  };
+
+  const resolveFunctionCode = async (functionId: string) => {
+    const fid = String(functionId || '').trim();
+    if (!fid) return '';
+    const local = props.generatedFunctions ? (props.generatedFunctions as any)[fid] : null;
+    const localCode = local && typeof local.code === 'string' ? String(local.code) : '';
+    if (localCode.trim()) return localCode;
+    try {
+      const r = await ragGetFunction(fid);
+      const fn = (r as any)?.function || r;
+      return typeof (fn as any)?.code === 'string' ? String((fn as any).code) : '';
+    } catch {
+      return '';
+    }
+  };
+
+  const onGenerateGlue = async (taskText: string) => {
+    if (!gluePanel) return;
+    const from = nodeById.get(gluePanel.fromId);
+    const to = nodeById.get(gluePanel.toId);
+    if (!from || !to) return;
+    setGlueError('');
+    setGlueBusy(true);
+    try {
+      const fromCode = from.kind === 'function' ? await resolveFunctionCode(String(from.functionId || '')) : '';
+      const toCode = to.kind === 'function' ? await resolveFunctionCode(String(to.functionId || '')) : '';
+
+      const resp = await codegenGlueCpp({
+        task: String(taskText || '').trim(),
+        from_node: {
+          id: from.id,
+          kind: from.kind,
+          display_name: from.displayName,
+          function_id: from.functionId || null,
+          module_key: from.moduleKey || null,
+          signature: from.signature || '',
+          inputs_json: from.inputsJson,
+          outputs_json: from.outputsJson,
+        },
+        to_node: {
+          id: to.id,
+          kind: to.kind,
+          display_name: to.displayName,
+          function_id: to.functionId || null,
+          module_key: to.moduleKey || null,
+          signature: to.signature || '',
+          inputs_json: to.inputsJson,
+          outputs_json: to.outputsJson,
+        },
+        from_code: fromCode,
+        to_code: toCode,
+        cpp_rules: CPP_REWRITE_RULES
+      });
+
+      if (!resp?.ok) throw new Error(String((resp as any)?.error || '生成胶水函数失败'));
+      const fnName = String((resp as any)?.function_name || 'glueConvert').trim() || 'glueConvert';
+      const functionId = `glue:${fnName}:${Date.now().toString(36)}`;
+      const displayName = String((resp as any)?.display_name || '格式转换胶水').trim() || '格式转换胶水';
+      const signature = String((resp as any)?.signature || '').trim();
+      const docZh = String((resp as any)?.doc_zh || '').trim();
+      const code = String((resp as any)?.code || '').trim();
+      const inputsJson = JSON.stringify((resp as any)?.inputs_json ?? safeParseJson(from.outputsJson) ?? {}, null, 2);
+      const outputsJson = JSON.stringify((resp as any)?.outputs_json ?? safeParseJson(to.inputsJson) ?? {}, null, 2);
+
+      const nodeId = Math.random().toString(36).slice(2, 10);
+      const x = (from.x + to.x) / 2 + 40;
+      const y = (from.y + to.y) / 2;
+
+      props.onUpsertGeneratedFunction?.({
+        function_id: functionId,
+        display_name: displayName,
+        signature: signature || `void ${fnName}()` ,
+        module: 'glue',
+        doc_zh: docZh,
+        doc_en: '',
+        code
+      });
+
+      setNodes((prev) => [
+        ...prev,
+        {
+          id: nodeId,
+          canvasId: activeCanvasId,
+          kind: 'function',
+          status: 'clean',
+          functionId,
+          displayName,
+          module: 'glue',
+          signature: signature || `void ${fnName}()`,
+          inputsJson,
+          outputsJson,
+          x,
+          y
+        }
+      ]);
+
+      setEdges((prev) => {
+        const keep = prev.filter((e) => {
+          if (e.canvasId !== activeCanvasId) return true;
+          if (e.from === gluePanel.fromId && e.to === gluePanel.toId) return false;
+          return true;
+        });
+        const a = {
+          id: Math.random().toString(36).slice(2, 10),
+          canvasId: activeCanvasId,
+          from: gluePanel.fromId,
+          to: nodeId,
+          fromPort: gluePanel.fromPort,
+          toPort: gluePanel.fromPort
+        } as any;
+        const b = {
+          id: Math.random().toString(36).slice(2, 10),
+          canvasId: activeCanvasId,
+          from: nodeId,
+          to: gluePanel.toId,
+          fromPort: gluePanel.toPort,
+          toPort: gluePanel.toPort
+        } as any;
+        return [...keep, a, b];
+      });
+
+      setGluePanel(null);
+      requestAnimationFrame(() => autoLayoutNodes());
+      applyNodeSelection([nodeId], []);
+      const nn = {
+        id: nodeId,
+        canvasId: activeCanvasId,
+        kind: 'function',
+        status: 'clean',
+        functionId,
+        displayName,
+        module: 'glue',
+        signature: signature || `void ${fnName}()`,
+        inputsJson,
+        outputsJson,
+        x,
+        y
+      } as any;
+      selectAttributesByNode(nn);
+    } catch (e) {
+      setGlueError(e instanceof Error ? e.message : '生成胶水函数失败');
+    } finally {
+      setGlueBusy(false);
+    }
   };
 
   const beginPortConnect = (e: React.MouseEvent, fromNodeId: string, fromPort?: string) => {
@@ -2270,11 +3226,11 @@ const Canvas = (props: {
     setConnectSourceNodeId(null);
   };
 
-  const beginCanvasPan = (e: React.MouseEvent) => {
+  const beginCanvasPan = (e: React.MouseEvent, opts?: { forceLeft?: boolean }) => {
     if (viewMode !== 'graph') return;
     if (connectDrag) return;
     if (e.button === 0) {
-      if (!spaceDownRef.current) return;
+      if (!spaceDownRef.current && !opts?.forceLeft) return;
       const el = e.target as HTMLElement | null;
       const isInteractive = Boolean(el?.closest?.('button,input,textarea,select,option,[role="button"],[data-node-button="1"],[data-port-node]'));
       if (isInteractive) return;
@@ -2371,24 +3327,6 @@ const Canvas = (props: {
   };
 
   useEffect(() => {
-    const el = canvasAreaRef.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      if (viewMode !== 'graph') return;
-      if (!canvasAreaRef.current) return;
-      e.preventDefault();
-      const rect = canvasAreaRef.current.getBoundingClientRect();
-      const factor = e.deltaY > 0 ? 0.92 : 1.08;
-      const nextScale = viewport.scale * factor;
-      const lx = e.clientX - rect.left;
-      const ly = e.clientY - rect.top;
-      zoomAt(lx, ly, nextScale);
-    };
-    el.addEventListener('wheel', onWheel, { passive: false, capture: true });
-    return () => el.removeEventListener('wheel', onWheel as any);
-  }, [viewMode, viewport.x, viewport.y, viewport.scale]);
-
-  useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === ' ') {
         const target = e.target as HTMLElement | null;
@@ -2438,9 +3376,41 @@ const Canvas = (props: {
   };
 
   useEffect(() => {
-    const endDrag = async () => {
+    const endDrag = async (clientX?: number, clientY?: number) => {
       const d = dragRef.current;
-      if (connectDrag) {
+      const cd = connectDrag;
+      if (cd && typeof clientX === 'number' && typeof clientY === 'number') {
+        const p = toWorldPoint(clientX, clientY);
+        const pickNode = (() => {
+          for (const n of [...activeNodes].reverse()) {
+            if (n.id === cd.fromId) continue;
+            const r = nodeRect(n);
+            const inside = p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+            if (inside) return n;
+          }
+          return null;
+        })();
+
+        if (pickNode) {
+          const ports = getPorts(pickNode);
+          const pickPort = (() => {
+            if (!ports.inputs.length) return undefined;
+            let best: { name: string; d: number } | null = null;
+            for (const name of ports.inputs) {
+              const a = getAnchorRender(pickNode, 'in', name);
+              const dx = a.x - p.x;
+              const dy = a.y - p.y;
+              const dd = dx * dx + dy * dy;
+              if (!best || dd < best.d) best = { name, d: dd };
+            }
+            return best?.name;
+          })();
+
+          await connectNodes(cd.fromId, pickNode.id, cd.fromPort, pickPort);
+        }
+      }
+
+      if (cd) {
         setConnectDrag(null);
         setConnectSourceNodeId(null);
       }
@@ -2557,8 +3527,8 @@ const Canvas = (props: {
     };
     const onMouseMove = (e: MouseEvent) => onMoveCore(e.clientX, e.clientY, e.buttons);
     const onPointerMove = (e: PointerEvent) => onMoveCore(e.clientX, e.clientY, e.buttons);
-    const onMouseUp = () => void endDrag();
-    const onPointerUp = () => void endDrag();
+    const onMouseUp = (e: MouseEvent) => void endDrag(e.clientX, e.clientY);
+    const onPointerUp = (e: PointerEvent) => void endDrag(e.clientX, e.clientY);
     const onPointerCancel = () => void endDrag();
     const onBlur = () => void endDrag();
     const onContextMenu = (e: MouseEvent) => {
@@ -2818,9 +3788,9 @@ const Canvas = (props: {
 
   const activeCanvas = canvases.find(c => c.id === activeCanvasId);
   const statusMeta: Record<'clean' | 'editing' | 'modified', { label: string; cls: string }> = {
-    clean: { label: '未修改', cls: 'bg-gray-300' },
-    editing: { label: '修改中', cls: 'bg-amber-400' },
-    modified: { label: '已修改', cls: 'bg-green-500' }
+    clean: { label: '组件库', cls: 'bg-gray-300' },
+    editing: { label: '新增', cls: 'bg-amber-400' },
+    modified: { label: '可导出', cls: 'bg-green-500' }
   };
 
   useEffect(() => {
@@ -2845,6 +3815,7 @@ const Canvas = (props: {
       }
     ]);
     applyNodeSelection([id], []);
+    requestAnimationFrame(() => autoLayoutNodes());
   }, [props.injectModuleSignal]);
 
   useEffect(() => {
@@ -2856,7 +3827,7 @@ const Canvas = (props: {
         id,
         canvasId: activeCanvasId,
         kind: 'module',
-        status: 'clean',
+        status: 'editing',
         moduleKey: props.createModel!.moduleKey,
         displayName: props.createModel!.displayName,
         module: 'module',
@@ -2868,6 +3839,7 @@ const Canvas = (props: {
       }
     ]);
     applyNodeSelection([id], []);
+    requestAnimationFrame(() => autoLayoutNodes());
   }, [props.createModelSignal]);
 
   useEffect(() => {
@@ -2894,6 +3866,7 @@ const Canvas = (props: {
       }
     ]);
     applyNodeSelection([id], []);
+    requestAnimationFrame(() => autoLayoutNodes());
   }, [props.injectFunctionSignal]);
 
   useEffect(() => {
@@ -3114,6 +4087,7 @@ const Canvas = (props: {
       
       <div
         ref={canvasAreaRef}
+        data-testid="gaasd-canvas-area"
         className="flex-1 relative overflow-hidden"
         style={{
           backgroundColor: '#fff',
@@ -3127,6 +4101,15 @@ const Canvas = (props: {
         }}
         onDragOver={(e) => e.preventDefault()}
         onDrop={onDropCanvas}
+        onWheelCapture={(e) => {
+          if (viewMode !== 'graph') return;
+          e.preventDefault();
+          const rect = canvasAreaRef.current?.getBoundingClientRect();
+          const lx = rect ? e.clientX - rect.left : e.clientX;
+          const ly = rect ? e.clientY - rect.top : e.clientY;
+          const factor = e.deltaY > 0 ? 0.92 : 1.08;
+          zoomAt(lx, ly, viewport.scale * factor);
+        }}
         onPointerDownCapture={(e) => {
           if (e.button === 2) {
             e.preventDefault();
@@ -3138,8 +4121,16 @@ const Canvas = (props: {
             beginCanvasPan(e as any);
             return;
           }
-          if (e.button === 0 && spaceDownRef.current) {
-            beginCanvasPan(e as any);
+          if (e.button === 0) {
+            if (spaceDownRef.current) {
+              beginCanvasPan(e as any);
+              return;
+            }
+            if (e.shiftKey) {
+              beginCanvasSelect(e as any);
+              return;
+            }
+            beginCanvasPan(e as any, { forceLeft: true });
             return;
           }
           beginCanvasSelect(e as any);
@@ -3252,6 +4243,7 @@ const Canvas = (props: {
         {viewMode === 'graph' && (
           <div
             className="absolute inset-0"
+            data-testid="gaasd-viewport-layer"
             style={{
               transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.scale})`,
               transformOrigin: '0 0'
@@ -3357,6 +4349,11 @@ const Canvas = (props: {
                     data-node-button="1"
                     data-node-id={n.id}
                     onMouseDown={(e) => beginNodeDrag(e, n)}
+                    onMouseUp={(e) => {
+                      if (!connectDrag) return;
+                      if (connectDrag.fromId === n.id) return;
+                      finishPortConnect(e, n.id);
+                    }}
                     onContextMenu={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -3453,7 +4450,7 @@ const Canvas = (props: {
                     )}
                     <span className={clsx("absolute left-1.5 top-1.5 h-2.5 w-2.5 rounded-full", statusMeta[normalizeNodeStatus(n.status)].cls)} title={statusMeta[normalizeNodeStatus(n.status)].label} />
                     <div className="flex items-center justify-between gap-2">
-                      <div className="text-[11px] font-semibold text-[#4A148C] truncate pl-3">{n.displayName}</div>
+                      <div className="text-[11px] font-semibold text-[#4A148C] truncate pl-3" title={n.displayName}>{cnizeIdentifier(n.displayName)}</div>
                       <div className="flex items-center gap-1">
                         {n.kind === 'module' && (
                           <span
@@ -3837,6 +4834,39 @@ const Canvas = (props: {
             <Search className="w-4 h-4" />
           </button>
         </div>
+
+        {gluePanel && (() => {
+          const from = nodeById.get(gluePanel.fromId);
+          const to = nodeById.get(gluePanel.toId);
+          if (!from || !to) return null;
+          const fromFields = parseFieldDefs(from.outputsJson);
+          const toFields = parseFieldDefs(to.inputsJson);
+          const defaultTask = `将上游节点的输出转换为下游节点的输入，满足字段映射与类型转换要求，缺失字段给出合理默认值。`;
+          return (
+            <GlueCppPanel
+              fromLabel={`${from.displayName}${gluePanel.fromPort ? ` (${gluePanel.fromPort})` : ''}`}
+              toLabel={`${to.displayName}${gluePanel.toPort ? ` (${gluePanel.toPort})` : ''}`}
+              fromFields={fromFields}
+              toFields={toFields}
+              defaultTask={defaultTask}
+              busy={glueBusy}
+              error={glueError}
+              onDirectConnect={() => {
+                if (glueBusy) return;
+                const p = gluePanel;
+                setGluePanel(null);
+                setGlueError('');
+                directConnectNodes(p.fromId, p.toId, p.fromPort, p.toPort);
+              }}
+              onClose={() => {
+                if (glueBusy) return;
+                setGluePanel(null);
+                setGlueError('');
+              }}
+              onGenerate={(t) => void onGenerateGlue(t)}
+            />
+          );
+        })()}
       </div>
     </div>
   );
@@ -4015,6 +5045,13 @@ const RequirementPanel = (props: {
   qaRisk: string;
   qaAmbiguity: string;
   qaMissing: string;
+  qaPrefill?: {
+    goal: string;
+    constraints: string;
+    subtasks: string;
+    risk_items: string[];
+    missing_items: string[];
+  } | null;
 }) => {
   const [activeTab, setActiveTab] = useState<'requirement' | 'qa' | 'llm-call' | 'llm-prompt'>('requirement');
   const [qaPrompt, setQaPrompt] = useState('');
@@ -4026,6 +5063,7 @@ const RequirementPanel = (props: {
   const [qaAutoFilledSignal, setQaAutoFilledSignal] = useState(0);
   const [qaAmbItems, setQaAmbItems] = useState<Array<{ text: string; resolved: boolean; question: string; answer: string }>>([]);
   const [qaMissingItems, setQaMissingItems] = useState<Array<{ text: string; resolved: boolean; question: string; answer: string }>>([]);
+  const [qaReviewMode, setQaReviewMode] = useState<'risk' | 'missing' | null>(null);
 
   const LLM_LOCAL_KEY = 'gaasd:llm_source_config:v1';
   type ApiProviderId = 'glm';
@@ -4125,23 +5163,66 @@ const RequirementPanel = (props: {
     }
   };
 
+  const stripListPrefix = (line: string) => {
+    let s = String(line || '').trim();
+    if (!s) return '';
+    if (/^#{1,6}\s+/.test(s)) return '';
+    if (/^---+$/.test(s)) return '';
+
+    const step = (v: string) => {
+      let out = v;
+      out = out.replace(/^\s*[-*•·–—]\s*(?:\[[ xX]\]\s*)?/, '');
+      out = out.replace(/^\s*(?:\(?\d+\)?[.)、:]|[（(]\d+[）)]|\d+[、.]|\d+\)|[①②③④⑤⑥⑦⑧⑨⑩])\s*/, '');
+      out = out.replace(/^\s*(?:[a-zA-Z][.)、:])\s*/, '');
+      out = out.replace(/^\s*\[[ xX]\]\s*/, '');
+      return out.trim();
+    };
+
+    for (let i = 0; i < 4; i += 1) {
+      const next = step(s);
+      if (next === s) break;
+      s = next;
+    }
+    return s.trim();
+  };
+
   const parseListItems = (text: string) => {
     const lines = String(text || '')
       .replace(/\r\n/g, '\n')
       .split('\n')
-      .map((x) => x.trim())
-      .filter(Boolean)
-      .map((x) => x.replace(/^[-*\d.、\s]+/, '').trim())
+      .map((x) => stripListPrefix(x))
       .filter(Boolean);
     return Array.from(new Set(lines));
   };
 
-  const CPP_REWRITE_RULES = String.raw`【C++代码改写统一规范（必须严格遵守）】
-生成 C++ 代码改写时需按统一表格字段与编码规范填写与实现：完成日期与姓名按“每个函数一行”分别记录以便追溯与工时统计；改写后文件夹名称采用大驼峰命名（如 BezierSpline），改写后源文件与头文件采用小驼峰命名（如 funBezier.cpp、funBezier.h），改写后路径按实际工程路径填写；改写前类型仅能在“类/函数”中二选一；改写后一级函数名必须同时满足三条约束：提供 Doxygen 函数说明、使用小驼峰且不得包含“_”“.”等分隔符、并作为测试用例中可由 main 直接调用的最上层入口（如 generateBezierPath），二级函数名为一级函数调用的下层函数（如 pointOnCubicBezier），三级函数名为二级函数调用的更下层函数（若有则同样小驼峰命名）；同时需给出函数中文名称（如“贝塞尔曲线”）用于组件展示与检索；整体质量与设计要求为：编译器警告/错误等级必须拉到最高并消除全部告警，代码结构必须包含注释说明、设计文档与函数主体三部分，不允许使用全局变量且静态变量不推荐使用（尽量将状态保存在顶层函数变量中），函数职责应单一，函数/类命名统一采用驼峰法，函数名展示长度建议不超过 12 个汉字，源码统一使用 UTF-8 编码，注释统一采用 Doxygen 格式且使用中文标点；控制流与语言特性限制为：禁止使用 goto，以及在 if-else 的 body 内禁止出现 return、break 等逻辑跳出语句，单个函数代码行数上限为 200 行；代码改写遵循“整体按 C 语言规范书写”的原则：复合函数必须采用 C 风格接口与实现形态，原子函数内部可采用少量 C++ 语法但对外接口必须呈现 C 语法格式，不支持类与模板语法，容器类（如 vector）需改为定长数组或 malloc 动态分配，指针使用方式需统一为“数组化”呈现并保持风格一致，表达式需拆解为清晰的逐步计算节点（禁止 ++/--，+=/-= 等复合赋值必须展开为显式赋值，三目运算符必须改为 if-else）；逻辑控制语句需满足“条件为单一变量、执行体为单一函数、禁止逻辑跳出语句”的约束：if-else 的条件变量应来自变量赋值或函数返回的单值比较，执行体封装为单一原子/复合函数且允许只有 if 无 else，但禁止在 if/else 内提前 return；for 循环必须将起始值、步进值、结束值拆为单一变量并以显式赋值/函数赋值方式获得，循环体同样封装为单一函数；注释细则为：函数头注释按给定 Doxygen 字段模板完整填写（含 @brief、@en_name、@cn_name、@type、@param、@param[IN]/[OUT]、@var、@retval、@granularity、@tag_level1/@tag_level2、@formula、@version、@date、@author 等），复合函数体内局部变量声明/定义必须在行尾注释说明变量含义；结构体字段采用大驼峰命名并在行尾注释中标注物理单位，数组字段在 @field 中用 Array<元素类型, 维度> 书写；枚举、宏定义与宏函数分别按对应 Doxygen 规范注释，其中宏定义可按日常习惯行尾注释即可，宏函数需提供 @tag MACRO_Function 与入参/返回值说明。`;
-
   const pickMdSection = (md: string, titleRe: string) => {
     const s = String(md || '').replace(/\r\n/g, '\n');
-    const re = new RegExp(`^\\s*#{1,6}\\s*(?:\\d+[\\.、\)]\\s*)?${titleRe}\\s*$([\\s\\S]*?)(^\\s*#{1,6}\\s|$)`, 'm');
+    const re = new RegExp(
+      `^\\s*#{1,6}\\s*(?:[\\d一二三四五六七八九十]+[\\.、\)]\\s*)?${titleRe}(?:\\s*[（(].*?[）)])?(?:\\s*[：:])?\\s*$([\\s\\S]*?)(^\\s*#{1,6}\\s|$)`,
+      'm'
+    );
+    const m = s.match(re);
+    if (!m) return '';
+    return String(m[1] || '').trim();
+  };
+
+  const pickBracketSection = (md: string, titleRe: string) => {
+    const s = String(md || '').replace(/\r\n/g, '\n');
+    const re = new RegExp(
+      `^\\s*[【\\[]\\s*(?:[\\d一二三四五六七八九十]+[\\.、\)]\\s*)?${titleRe}(?:\\s*[（(].*?[）)])?(?:\\s*[：:])?\\s*[】\\]]\\s*$([\\s\\S]*?)(^\\s*(?:[【\\[]|#{1,6}\\s)|$)`,
+      'm'
+    );
+    const m = s.match(re);
+    if (!m) return '';
+    return String(m[1] || '').trim();
+  };
+
+  const pickColonSection = (md: string, titleRe: string) => {
+    const s = String(md || '').replace(/\r\n/g, '\n');
+    const re = new RegExp(
+      `^\\s*(?:[\\d一二三四五六七八九十]+[\\.、\)]\\s*)?${titleRe}\\s*[：:]\\s*$([\\s\\S]*?)(^\\s*(?:[【\\[]|#{1,6}\\s|\\S+\\s*[：:])|$)`,
+      'm'
+    );
     const m = s.match(re);
     if (!m) return '';
     return String(m[1] || '').trim();
@@ -4149,20 +5230,13 @@ const RequirementPanel = (props: {
 
   const pickAnySection = (md: string, titleRes: string[]) => {
     for (const t of titleRes) {
-      const hit = pickMdSection(md, t);
+      const hit = pickMdSection(md, t) || pickBracketSection(md, t) || pickColonSection(md, t);
       if (hit) return hit;
     }
     return '';
   };
 
-  const listFromMd = (block: string) =>
-    String(block || '')
-      .split('\n')
-      .map((x) => x.trim())
-      .filter(Boolean)
-      .filter((x) => /^[-*\d.、]/.test(x))
-      .map((x) => x.replace(/^[-*\d.、\s]+/, '').trim())
-      .filter(Boolean);
+  const listFromMd = (block: string) => parseListItems(block);
 
   const buildFinalPrompt = (p: {
     requirement: string;
@@ -4223,38 +5297,58 @@ const RequirementPanel = (props: {
     if (!sig) return;
     if (qaAutoFilledSignal === sig) return;
     const md = String(props.taskAnalysisResult || '').trim();
-    if (!md) return;
+    const prefill = props.qaPrefill || null;
+    if (!md && !prefill) return;
 
-    const goal = pickAnySection(md, ['任务目标', '任务目标（问题描述）']);
-    const constraints = pickAnySection(md, ['关键约束', '关键约束（输入/输出）']);
-    const subtasks = pickAnySection(md, ['建议拆分的子任务']);
-    const ambText = pickAnySection(md, ['风险点\\s*/\\s*歧义点', '歧义点', '风险点']);
-    const missingText = pickAnySection(md, ['缺失信息清单', '缺失信息']);
+    const goal = md ? pickAnySection(md, ['任务目标', '需求目标', '整体描述\s*\(goal\)', '消歧后的整体描述', '整体描述', 'Goal']) : '';
+    const constraints = md ? pickAnySection(md, ['关键约束', '约束条件', '关键限制', '关键约束\s*\(constraints\)', 'Constraints']) : '';
+    const subtasks = md ? pickAnySection(md, ['建议拆分的子任务', '建议拆分子任务', '任务拆分', '实现步骤', '子任务\s*\(subtasks\)', 'Subtasks']) : '';
+    const ambText =
+      (md ? pickAnySection(md, ['风险点\\s*/\\s*歧义点', '风险(?:点)?与歧义(?:点)?', '歧义点', '风险点']) : '') ||
+      String(props.qaAmbiguity || '').trim() ||
+      String(props.qaRisk || '').trim() ||
+      (prefill?.risk_items || []).map((x) => String(x).trim()).filter(Boolean).join('\n');
+    const missingText =
+      (md ? pickAnySection(md, ['缺失信息清单', '缺失信息']) : '') ||
+      String(props.qaMissing || '').trim() ||
+      (prefill?.missing_items || []).map((x) => String(x).trim()).filter(Boolean).join('\n');
 
     const ambList = listFromMd(ambText);
     const missingList = listFromMd(missingText);
     const ambItems = Array.from(new Set(ambList)).map((t) => ({ text: t, resolved: false, question: '', answer: '' }));
     const missingItems = Array.from(new Set(missingList)).map((t) => ({ text: t, resolved: false, question: '', answer: '' }));
 
-    setQaGoal(goal);
-    setQaConstraints(constraints);
-    setQaSubtasks(subtasks);
-    setQaAmbItems(ambItems);
-    setQaMissingItems(missingItems);
+    const goalText = String(goal || '').trim() || String(prefill?.goal || '').trim() || String(props.prompt || '').trim();
+    const constraintsText = String(constraints || '').trim() || String(prefill?.constraints || '').trim() || '-';
+    const subtasksText = String(subtasks || '').trim() || String(prefill?.subtasks || '').trim() || '-';
+
+    const finalAmbItems = ambItems.length
+      ? ambItems
+      : Array.from(new Set((prefill?.risk_items || []).map((x) => String(x).trim()).filter(Boolean))).map((t) => ({ text: t, resolved: false, question: '', answer: '' }));
+    const finalMissingItems = missingItems.length
+      ? missingItems
+      : Array.from(new Set((prefill?.missing_items || []).map((x) => String(x).trim()).filter(Boolean))).map((t) => ({ text: t, resolved: false, question: '', answer: '' }));
+
+    setQaGoal(goalText);
+    setQaConstraints(constraintsText);
+    setQaSubtasks(subtasksText);
+    setQaAmbItems(finalAmbItems);
+    setQaMissingItems(finalMissingItems);
     setQaAutoFilledSignal(sig);
+    setQaMsg(`已自动填充：歧义点 ${finalAmbItems.length} 条，缺失信息 ${finalMissingItems.length} 条`);
     setQaPrompt(
       buildFinalPrompt({
         requirement: props.prompt,
         analysis: props.taskAnalysisResult,
-        goal,
-        constraints,
-        subtasks,
-        ambiguityItems: ambItems,
-        missingItems,
+        goal: goalText,
+        constraints: constraintsText,
+        subtasks: subtasksText,
+        ambiguityItems: finalAmbItems,
+        missingItems: finalMissingItems,
         canvasCode: props.qaCanvasCodeContext
       })
     );
-  }, [props.qaAutoOpenSignal, props.taskAnalysisResult]);
+  }, [props.qaAutoOpenSignal, props.taskAnalysisResult, props.qaRisk, props.qaAmbiguity, props.qaMissing, props.prompt, props.qaPrefill, props.qaCanvasCodeContext]);
 
   useEffect(() => {
     setQaPrompt(
@@ -4448,194 +5542,100 @@ const RequirementPanel = (props: {
                 </button>
               </div>
               <div className="mt-2 space-y-2">
-                {qaAmbItems.length === 0 && <div className="text-[11px] text-gray-500">暂无歧义点</div>}
-                {qaAmbItems.map((it, idx) => (
-                  <div key={idx} className="rounded border border-gray-100 p-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <label className="flex items-start gap-2 flex-1">
-                        <input type="checkbox" checked={it.resolved} onChange={(e) => setQaAmbItems((prev) => prev.map((x, i) => (i === idx ? { ...x, resolved: Boolean(e.target.checked) } : x)))} />
-                        <div className="flex-1">
-                          <div className="text-[11px] text-gray-800 whitespace-pre-wrap">{it.text}</div>
-                          {!!it.question && <div className="mt-1 text-[11px] text-[#4A148C] whitespace-pre-wrap">Q：{it.question}</div>}
-                        </div>
-                      </label>
-                      <button
-                        disabled={qaBusy}
-                        className="h-7 px-2 rounded border border-[#E1BEE7] text-[11px] text-[#6A1B9A] hover:bg-[#F8ECFA] disabled:opacity-50"
-                        onClick={async () => {
-                          setQaBusy(true);
-                          setQaMsg('');
-                          try {
-                            const r = await cotQuestion({
-                              mode: 'risk',
-                              item: it.text,
-                              goal: qaGoal,
-                              constraints: qaConstraints,
-                              subtasks: qaSubtasks,
-                              risk_items: qaAmbItems.filter((x) => !x.resolved).map((x) => x.text),
-                              missing_items: qaMissingItems.filter((x) => !x.resolved).map((x) => x.text)
-                            });
-                            if (!r.ok || !r.question) throw new Error(r.error || 'empty question');
-                            setQaAmbItems((prev) => prev.map((x, i) => (i === idx ? { ...x, question: String(r.question) } : x)));
-                          } catch (e) {
-                            setQaMsg(e instanceof Error ? e.message : '生成问题失败');
-                          } finally {
-                            setQaBusy(false);
-                          }
-                        }}
-                      >
-                        生成问题
-                      </button>
-                    </div>
-                    <textarea
-                      value={it.answer}
-                      onChange={(e) => setQaAmbItems((prev) => prev.map((x, i) => (i === idx ? { ...x, answer: e.target.value } : x)))}
-                      className="mt-2 w-full min-h-[60px] p-2 text-xs border border-gray-200 rounded outline-none"
-                      placeholder="输入回答（用于消歧/补齐）"
-                    />
-                    <div className="mt-2 flex justify-end">
-                      <button
-                        disabled={qaBusy || !String(it.answer || '').trim()}
-                        className="h-7 px-3 rounded bg-[#6A1B9A] text-white text-[11px] hover:bg-[#4A148C] disabled:opacity-50"
-                        onClick={async () => {
-                          setQaBusy(true);
-                          setQaMsg('');
-                          try {
-                            const r = await cotRefine({
-                              mode: 'risk',
-                              item: it.text,
-                              answer: it.answer,
-                              goal: qaGoal,
-                              constraints: qaConstraints,
-                              subtasks: qaSubtasks,
-                              risk_items: qaAmbItems.filter((x) => !x.resolved).map((x) => x.text),
-                              missing_items: qaMissingItems.filter((x) => !x.resolved).map((x) => x.text)
-                            });
-                            if (!r.ok) throw new Error(r.error || 'refine_failed');
-                            setQaGoal(String(r.goal || ''));
-                            setQaConstraints(String(r.constraints || ''));
-                            setQaSubtasks(String(r.subtasks || ''));
-                            const nextAmb = Array.from(new Set((r.risk_items || []).map((x) => String(x).trim()).filter(Boolean))).map((t) => {
-                              const old = qaAmbItems.find((x) => x.text === t);
-                              return old ? old : { text: t, resolved: false, question: '', answer: '' };
-                            });
-                            const nextMissing = Array.from(new Set((r.missing_items || []).map((x) => String(x).trim()).filter(Boolean))).map((t) => {
-                              const old = qaMissingItems.find((x) => x.text === t);
-                              return old ? old : { text: t, resolved: false, question: '', answer: '' };
-                            });
-                            setQaAmbItems(nextAmb);
-                            setQaMissingItems(nextMissing);
-                            setQaMsg('已应用回答并更新目标/约束/清单');
-                          } catch (e) {
-                            setQaMsg(e instanceof Error ? e.message : '应用回答失败');
-                          } finally {
-                            setQaBusy(false);
-                          }
-                        }}
-                      >
-                        应用回答
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[11px] text-gray-600">待确认：{qaAmbItems.filter((x) => !x.resolved).length}，已确认：{qaAmbItems.filter((x) => x.resolved).length}</div>
+                  <button
+                    disabled={qaBusy || qaAmbItems.filter((x) => !x.resolved).length === 0}
+                    className="h-7 px-2 rounded bg-[#6A1B9A] text-white text-[11px] hover:bg-[#4A148C] disabled:opacity-50"
+                    onClick={() => setQaReviewMode('risk')}
+                  >
+                    逐条确认
+                  </button>
+                </div>
+                {qaAmbItems.filter((x) => !x.resolved).length === 0 && <div className="text-[11px] text-gray-500">暂无待确认歧义点</div>}
               </div>
             </div>
 
             <div className="rounded border border-[#E1BEE7] bg-white p-2">
               <div className="text-[11px] font-semibold text-[#6A1B9A]">缺失信息</div>
               <div className="mt-2 space-y-2">
-                {qaMissingItems.length === 0 && <div className="text-[11px] text-gray-500">暂无缺失信息</div>}
-                {qaMissingItems.map((it, idx) => (
-                  <div key={idx} className="rounded border border-gray-100 p-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <label className="flex items-start gap-2 flex-1">
-                        <input type="checkbox" checked={it.resolved} onChange={(e) => setQaMissingItems((prev) => prev.map((x, i) => (i === idx ? { ...x, resolved: Boolean(e.target.checked) } : x)))} />
-                        <div className="flex-1">
-                          <div className="text-[11px] text-gray-800 whitespace-pre-wrap">{it.text}</div>
-                          {!!it.question && <div className="mt-1 text-[11px] text-[#4A148C] whitespace-pre-wrap">Q：{it.question}</div>}
-                        </div>
-                      </label>
-                      <button
-                        disabled={qaBusy}
-                        className="h-7 px-2 rounded border border-[#E1BEE7] text-[11px] text-[#6A1B9A] hover:bg-[#F8ECFA] disabled:opacity-50"
-                        onClick={async () => {
-                          setQaBusy(true);
-                          setQaMsg('');
-                          try {
-                            const r = await cotQuestion({
-                              mode: 'missing',
-                              item: it.text,
-                              goal: qaGoal,
-                              constraints: qaConstraints,
-                              subtasks: qaSubtasks,
-                              risk_items: qaAmbItems.filter((x) => !x.resolved).map((x) => x.text),
-                              missing_items: qaMissingItems.filter((x) => !x.resolved).map((x) => x.text)
-                            });
-                            if (!r.ok || !r.question) throw new Error(r.error || 'empty question');
-                            setQaMissingItems((prev) => prev.map((x, i) => (i === idx ? { ...x, question: String(r.question) } : x)));
-                          } catch (e) {
-                            setQaMsg(e instanceof Error ? e.message : '生成问题失败');
-                          } finally {
-                            setQaBusy(false);
-                          }
-                        }}
-                      >
-                        生成问题
-                      </button>
-                    </div>
-                    <textarea
-                      value={it.answer}
-                      onChange={(e) => setQaMissingItems((prev) => prev.map((x, i) => (i === idx ? { ...x, answer: e.target.value } : x)))}
-                      className="mt-2 w-full min-h-[60px] p-2 text-xs border border-gray-200 rounded outline-none"
-                      placeholder="输入补充信息（用于补齐缺口）"
-                    />
-                    <div className="mt-2 flex justify-end">
-                      <button
-                        disabled={qaBusy || !String(it.answer || '').trim()}
-                        className="h-7 px-3 rounded bg-[#6A1B9A] text-white text-[11px] hover:bg-[#4A148C] disabled:opacity-50"
-                        onClick={async () => {
-                          setQaBusy(true);
-                          setQaMsg('');
-                          try {
-                            const r = await cotRefine({
-                              mode: 'missing',
-                              item: it.text,
-                              answer: it.answer,
-                              goal: qaGoal,
-                              constraints: qaConstraints,
-                              subtasks: qaSubtasks,
-                              risk_items: qaAmbItems.filter((x) => !x.resolved).map((x) => x.text),
-                              missing_items: qaMissingItems.filter((x) => !x.resolved).map((x) => x.text)
-                            });
-                            if (!r.ok) throw new Error(r.error || 'refine_failed');
-                            setQaGoal(String(r.goal || ''));
-                            setQaConstraints(String(r.constraints || ''));
-                            setQaSubtasks(String(r.subtasks || ''));
-                            const nextAmb = Array.from(new Set((r.risk_items || []).map((x) => String(x).trim()).filter(Boolean))).map((t) => {
-                              const old = qaAmbItems.find((x) => x.text === t);
-                              return old ? old : { text: t, resolved: false, question: '', answer: '' };
-                            });
-                            const nextMissing = Array.from(new Set((r.missing_items || []).map((x) => String(x).trim()).filter(Boolean))).map((t) => {
-                              const old = qaMissingItems.find((x) => x.text === t);
-                              return old ? old : { text: t, resolved: false, question: '', answer: '' };
-                            });
-                            setQaAmbItems(nextAmb);
-                            setQaMissingItems(nextMissing);
-                            setQaMsg('已应用补充信息并更新目标/约束/清单');
-                          } catch (e) {
-                            setQaMsg(e instanceof Error ? e.message : '应用回答失败');
-                          } finally {
-                            setQaBusy(false);
-                          }
-                        }}
-                      >
-                        应用回答
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[11px] text-gray-600">待确认：{qaMissingItems.filter((x) => !x.resolved).length}，已确认：{qaMissingItems.filter((x) => x.resolved).length}</div>
+                  <button
+                    disabled={qaBusy || qaMissingItems.filter((x) => !x.resolved).length === 0}
+                    className="h-7 px-2 rounded bg-[#6A1B9A] text-white text-[11px] hover:bg-[#4A148C] disabled:opacity-50"
+                    onClick={() => setQaReviewMode('missing')}
+                  >
+                    逐条确认
+                  </button>
+                </div>
+                {qaMissingItems.filter((x) => !x.resolved).length === 0 && <div className="text-[11px] text-gray-500">暂无待确认缺失信息</div>}
               </div>
             </div>
+
+            <ReviewItemsModal
+              open={qaReviewMode === 'risk'}
+              mode="risk"
+              title="歧义点逐条确认"
+              items={qaAmbItems}
+              goal={qaGoal}
+              constraints={qaConstraints}
+              subtasks={qaSubtasks}
+              getRiskItems={() => qaAmbItems.filter((x) => !x.resolved).map((x) => x.text)}
+              getMissingItems={() => qaMissingItems.filter((x) => !x.resolved).map((x) => x.text)}
+              onApply={(p) => {
+                setQaGoal(p.goal);
+                setQaConstraints(p.constraints);
+                setQaSubtasks(p.subtasks);
+
+                const prevResolved = qaAmbItems.filter((x) => x.resolved && x.text !== p.item);
+                const prevCurrent = qaAmbItems.find((x) => x.text === p.item);
+                const currentResolved = prevCurrent
+                  ? [{ ...prevCurrent, resolved: true, question: p.question, answer: p.answer }]
+                  : [{ text: p.item, resolved: true, question: p.question, answer: p.answer }];
+                const nextTexts = Array.from(new Set((p.risk_items || []).map((x) => String(x).trim()).filter(Boolean)));
+                const nextPending = nextTexts.map((t) => qaAmbItems.find((x) => x.text === t) || { text: t, resolved: false, question: '', answer: '' });
+                setQaAmbItems([...prevResolved, ...currentResolved, ...nextPending]);
+
+                const nextMissingTexts = Array.from(new Set((p.missing_items || []).map((x) => String(x).trim()).filter(Boolean)));
+                const keepMissingResolved = qaMissingItems.filter((x) => x.resolved);
+                const nextMissingPending = nextMissingTexts.map((t) => qaMissingItems.find((x) => x.text === t) || { text: t, resolved: false, question: '', answer: '' });
+                setQaMissingItems([...keepMissingResolved, ...nextMissingPending]);
+              }}
+              onClose={() => setQaReviewMode(null)}
+            />
+
+            <ReviewItemsModal
+              open={qaReviewMode === 'missing'}
+              mode="missing"
+              title="缺失信息逐条确认"
+              items={qaMissingItems}
+              goal={qaGoal}
+              constraints={qaConstraints}
+              subtasks={qaSubtasks}
+              getRiskItems={() => qaAmbItems.filter((x) => !x.resolved).map((x) => x.text)}
+              getMissingItems={() => qaMissingItems.filter((x) => !x.resolved).map((x) => x.text)}
+              onApply={(p) => {
+                setQaGoal(p.goal);
+                setQaConstraints(p.constraints);
+                setQaSubtasks(p.subtasks);
+
+                const prevResolved = qaMissingItems.filter((x) => x.resolved && x.text !== p.item);
+                const prevCurrent = qaMissingItems.find((x) => x.text === p.item);
+                const currentResolved = prevCurrent
+                  ? [{ ...prevCurrent, resolved: true, question: p.question, answer: p.answer }]
+                  : [{ text: p.item, resolved: true, question: p.question, answer: p.answer }];
+                const nextTexts = Array.from(new Set((p.missing_items || []).map((x) => String(x).trim()).filter(Boolean)));
+                const nextPending = nextTexts.map((t) => qaMissingItems.find((x) => x.text === t) || { text: t, resolved: false, question: '', answer: '' });
+                setQaMissingItems([...prevResolved, ...currentResolved, ...nextPending]);
+
+                const nextRiskTexts = Array.from(new Set((p.risk_items || []).map((x) => String(x).trim()).filter(Boolean)));
+                const keepRiskResolved = qaAmbItems.filter((x) => x.resolved);
+                const nextRiskPending = nextRiskTexts.map((t) => qaAmbItems.find((x) => x.text === t) || { text: t, resolved: false, question: '', answer: '' });
+                setQaAmbItems([...keepRiskResolved, ...nextRiskPending]);
+              }}
+              onClose={() => setQaReviewMode(null)}
+            />
 
             <div className="rounded border border-[#E1BEE7] bg-white p-2">
               <div className="flex items-center justify-between gap-2">
@@ -4973,7 +5973,20 @@ const AttributesPanel = (props: {
   ]);
 
   const renderCodeViewer = (text: string) => {
-    const lines = String(text || '').replace(/\r\n/g, '\n').split('\n');
+    const raw = String(text || '').replace(/\r\n/g, '\n');
+    const normalized = raw
+      .split('\n')
+      .map((line) => {
+        const t = String(line || '');
+        const trimmed = t.trimStart();
+        if (trimmed.startsWith('```') || trimmed.startsWith('###')) {
+          if (trimmed.startsWith('//')) return t;
+          return `//${t}`;
+        }
+        return t;
+      })
+      .join('\n');
+    const lines = normalized.split('\n');
     return (
       <div className="mt-2 rounded border border-[#E1BEE7] overflow-hidden">
         <div className="max-h-[280px] overflow-auto bg-white">
@@ -5066,7 +6079,19 @@ const AttributesPanel = (props: {
                 className="h-7 px-2 rounded border border-[#E1BEE7] hover:bg-[#F8ECFA] text-[#6A1B9A] disabled:opacity-50"
                 disabled={!String(props.generatedCode || '').trim()}
                 onClick={async () => {
-                  const text = String(props.generatedCode || '');
+                  const text = String(props.generatedCode || '')
+                    .replace(/\r\n/g, '\n')
+                    .split('\n')
+                    .map((line) => {
+                      const t = String(line || '');
+                      const trimmed = t.trimStart();
+                      if (trimmed.startsWith('```') || trimmed.startsWith('###')) {
+                        if (trimmed.startsWith('//')) return t;
+                        return `//${t}`;
+                      }
+                      return t;
+                    })
+                    .join('\n');
                   try {
                     await navigator.clipboard.writeText(text);
                     setCopyMsg('已复制');
@@ -5155,6 +6180,13 @@ type WorkspaceProps = {
   qaRisk: string;
   qaAmbiguity: string;
   qaMissing: string;
+  qaPrefill?: {
+    goal: string;
+    constraints: string;
+    subtasks: string;
+    risk_items: string[];
+    missing_items: string[];
+  } | null;
   qaBusy: boolean;
   onQaAnalyze: () => void;
   terminalLines: string[];
@@ -5164,6 +6196,15 @@ type WorkspaceProps = {
   onGenerate: () => void;
   injectReusePayload?: { functions: any[]; modules: any[] } | null;
   injectReuseSignal?: number;
+  onUpsertGeneratedFunction?: (fn: {
+    function_id: string;
+    display_name: string;
+    signature: string;
+    module: string;
+    doc_zh: string;
+    doc_en?: string;
+    code: string;
+  }) => void;
 };
 
 export default function Workspace(props: WorkspaceProps) {
@@ -5253,6 +6294,7 @@ export default function Workspace(props: WorkspaceProps) {
                 onExportModule={props.onExportModule}
                 injectReusePayload={props.injectReusePayload || null}
                 injectReuseSignal={props.injectReuseSignal || 0}
+                onUpsertGeneratedFunction={props.onUpsertGeneratedFunction}
               />
             </Panel>
             <Separator className="h-2 bg-[#F3E5F5] hover:bg-[#AB47BC] transition-colors cursor-row-resize flex items-center justify-center z-50 border-y border-[#E1BEE7]">
@@ -5296,6 +6338,7 @@ export default function Workspace(props: WorkspaceProps) {
                 qaRisk={props.qaRisk}
                 qaAmbiguity={props.qaAmbiguity}
                 qaMissing={props.qaMissing}
+                qaPrefill={props.qaPrefill}
               />
             </Panel>
             <Separator className="h-2 bg-[#F3E5F5] hover:bg-[#AB47BC] transition-colors cursor-row-resize flex items-center justify-center z-50 border-y border-[#E1BEE7]">

@@ -44,11 +44,11 @@ def _extract_code_markdown(text: str) -> str:
     s = (text or '').strip()
     if not s:
         return ''
-    first = re.search(r'^###\s+.+$', s, flags=re.MULTILINE)
+    first = re.search(r'^\s*(?://\s*)?###\s+.+$', s, flags=re.MULTILINE)
     if first:
         s = s[first.start() :].strip()
     pat = re.compile(
-        r'(^###\s+.+$\n(?:.|\n)*?^```(?:cpp|c\+\+|c)\s*$\n(?:.|\n)*?^```\s*$)',
+        r'(^\s*(?://\s*)?###\s+.+$\n(?:.|\n)*?^\s*(?://\s*)?```(?:cpp|c\+\+|c)\s*$\n(?:.|\n)*?^\s*(?://\s*)?```\s*$)',
         flags=re.MULTILINE,
     )
     blocks = pat.findall(s)
@@ -79,7 +79,7 @@ def _extract_files_from_markdown(text: str) -> list[dict]:
         return []
 
     pat = re.compile(
-        r'^###\s+(?P<path>.+?)\s*$\n(?:(?:.|\n)*?)^```(?P<lang>cpp|c\+\+|c)\s*$\n(?P<body>(?:.|\n)*?)^```\s*$',
+        r'^\s*(?://\s*)?###\s+(?P<path>.+?)\s*$\n(?:(?:.|\n)*?)^\s*(?://\s*)?```(?P<lang>cpp|c\+\+|c)\s*$\n(?P<body>(?:.|\n)*?)^\s*(?://\s*)?```\s*$',
         flags=re.MULTILINE,
     )
     files: list[dict] = []
@@ -94,8 +94,23 @@ def _extract_files_from_markdown(text: str) -> list[dict]:
     if files:
         return files
 
+    pat_name = re.compile(
+        r'^\s*(?://\s*)?(?P<path>[^\n\r]+?\.(?:h|hpp|hh|hxx|c|cc|cpp|cxx))\s*$\n(?:(?:.|\n)*?)^\s*(?://\s*)?```(?P<lang>cpp|c\+\+|c)\s*$\n(?P<body>(?:.|\n)*?)^\s*(?://\s*)?```\s*$',
+        flags=re.MULTILINE,
+    )
+    files2: list[dict] = []
+    for m in pat_name.finditer(s):
+        path = (m.group('path') or '').strip()
+        lang = (m.group('lang') or '').strip().lower()
+        body = (m.group('body') or '').strip()
+        if not body:
+            continue
+        files2.append({'path': path, 'language': 'cpp' if lang in {'cpp', 'c++'} else 'c', 'content': body})
+    if files2:
+        return files2
+
     pat2 = re.compile(
-        r'^```(?P<lang>cpp|c\+\+|c)\s*$\n(?P<body>(?:.|\n)*?)^```\s*$',
+        r'^\s*(?://\s*)?```(?P<lang>cpp|c\+\+|c)\s*$\n(?P<body>(?:.|\n)*?)^\s*(?://\s*)?```\s*$',
         flags=re.MULTILINE,
     )
     blocks: list[dict] = []
@@ -163,6 +178,49 @@ def _looks_like_cpp_source(content: str) -> bool:
     if '{' in s and '}' in s:
         signals += 1
     return signals >= 2
+
+
+def _ext(p: str) -> str:
+    p = str(p or '').strip().lower().replace('\\', '/')
+    name = p.rsplit('/', 1)[-1]
+    if '.' not in name:
+        return ''
+    return '.' + name.rsplit('.', 1)[-1]
+
+
+def _needs_header_and_cpp(prompt: str) -> bool:
+    s = str(prompt or '')
+    low = s.lower()
+    if ('cpp文件' in s and ('h头文件' in s or '头文件' in s)):
+        return True
+    if ('头文件' in s and ('源文件' in s or 'cpp' in low)):
+        return True
+    if ('.h' in low or '.hpp' in low) and ('.cpp' in low or 'cpp文件' in s):
+        return True
+    return False
+
+
+def _has_header_and_cpp(files: list[dict]) -> tuple[bool, bool]:
+    has_h = False
+    has_cpp = False
+    for f in files or []:
+        if not isinstance(f, dict):
+            continue
+        e = _ext(str(f.get('path') or ''))
+        if e in {'.h', '.hpp', '.hh', '.hxx'}:
+            has_h = True
+        if e in {'.cpp', '.cc', '.cxx'}:
+            has_cpp = True
+    return has_h, has_cpp
+
+
+def _derive_cpp_from_header(header_path: str) -> str:
+    p = str(header_path or '').strip().replace('\\', '/')
+    if not p:
+        return 'main.cpp'
+    if p.lower().endswith(('.h', '.hpp', '.hh', '.hxx')):
+        return re.sub(r'\.(h|hpp|hh|hxx)\s*$', '.cpp', p, flags=re.I)
+    return p + '.cpp'
 
 
 def _normalize_rel_posix_path(p: str) -> str:
@@ -435,6 +493,10 @@ class OrchestratorService:
             extracted_files = _extract_files_from_markdown(code_md_text)
             if not extracted_files:
                 return False
+            if _needs_header_and_cpp(merged):
+                has_h, has_cpp = _has_header_and_cpp(extracted_files)
+                if not (has_h and has_cpp):
+                    return False
             return any(_looks_like_cpp_source(f.get('content') or '') for f in extracted_files)
 
         if not _is_valid_output(code_md):
@@ -514,6 +576,87 @@ class OrchestratorService:
                 key_points = key_points2 or key_points
 
         extracted_final = _extract_files_from_markdown(code_md)
+        if _needs_header_and_cpp(merged):
+            has_h, has_cpp = _has_header_and_cpp(extracted_final)
+            if not (has_h and has_cpp):
+                header_paths = [str(f.get('path') or '').strip() for f in extracted_final if _ext(str(f.get('path') or '')) in {'.h', '.hpp', '.hh', '.hxx'}]
+                header_hint = header_paths[0] if header_paths else ''
+                cpp_hint = _derive_cpp_from_header(header_hint) if header_hint else 'main.cpp'
+                repair_payload = {
+                    'task': '你是智能驾驶代码生产线的 C/C++ 代码生成器。现有输出缺失 .h 或 .cpp，请补齐并保证可自洽编译。',
+                    'input': {
+                        'prompt': merged,
+                        'requirements': {
+                            'must_have_header_and_cpp': True,
+                            'header_hint': header_hint,
+                            'cpp_hint': cpp_hint,
+                        },
+                        'current_files': [
+                            {
+                                'path': str(f.get('path') or '').strip(),
+                                'language': str(f.get('language') or 'cpp').strip() or 'cpp',
+                                'content': str(f.get('content') or '').strip(),
+                            }
+                            for f in extracted_final
+                            if isinstance(f, dict)
+                        ],
+                    },
+                    'output_schema': {
+                        'files': [
+                            {
+                                'path': 'string (相对路径，必须包含至少 1 个 .h/.hpp 和 1 个 .cpp/.cc/.cxx)',
+                                'language': 'string (cpp 或 c)',
+                                'content': 'string (纯源码文本，不要 Markdown code fence，不要解释文字)',
+                            }
+                        ],
+                        'key_points': 'string[]',
+                        'log': 'string',
+                    },
+                    'rules': [
+                        '只输出 JSON',
+                        '必须包含 current_files 中的所有文件（内容可调整，但不得删掉）',
+                        '必须输出至少 2 个文件：至少 1 个头文件(.h/.hpp) + 至少 1 个源文件(.cpp/.cc/.cxx)',
+                        '若当前仅有头文件，请将实现尽可能放入 cpp，并在 cpp 中 #include 对应头文件',
+                        '严禁复述/粘贴输入提示词、规范或任何非源码文字',
+                        'content 只能是纯源码，不得包含 ``` 或 ### 或 Markdown 标题',
+                    ],
+                }
+
+                def _call_pair_repair():
+                    return client.chat.completions.create(
+                        model=model,
+                        temperature=0,
+                        messages=[
+                            {'role': 'system', 'content': '输出 JSON。不要输出其它内容。'},
+                            {'role': 'user', 'content': json.dumps(repair_payload, ensure_ascii=False)},
+                        ],
+                        response_format={'type': 'json_object'},
+                        extra_body={'enable_thinking': False},
+                    )
+
+                try:
+                    res_pair = llm_call(_call_pair_repair)
+                    obj_pair = _parse_json((res_pair.choices[0].message.content or '').strip())
+                    files_pair: list[dict] = []
+                    if isinstance(obj_pair.get('files'), list):
+                        for it in obj_pair.get('files'):
+                            if not isinstance(it, dict):
+                                continue
+                            files_pair.append(
+                                {
+                                    'path': str(it.get('path') or '').strip() or (cpp_hint or 'main.cpp'),
+                                    'language': str(it.get('language') or 'cpp').strip() or 'cpp',
+                                    'content': str(it.get('content') or '').strip(),
+                                }
+                            )
+                    code_md_pair = _format_files_to_markdown(files_pair)
+                    if _is_valid_output(code_md_pair):
+                        code_md = code_md_pair
+                        extracted_final = _extract_files_from_markdown(code_md)
+                        key_points = _clean_str_list(obj_pair.get('key_points')) or key_points
+                        log = str(obj_pair.get('log') or '').strip() or log
+                except Exception:
+                    pass
         missing_includes = _find_missing_quote_includes(extracted_final)
         if missing_includes:
             repair_payload = {

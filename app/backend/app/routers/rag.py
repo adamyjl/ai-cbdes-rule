@@ -5,7 +5,7 @@ from uuid import uuid4
 from backend.app.services.data_dir import get_data_dir
 from pydantic import BaseModel
 
-from backend.app.schemas import IndexRequest, RagQueryRequest, RagQueryResponse, ScanRequest
+from backend.app.schemas import IndexRequest, RagQueryModuleHit, RagQueryModulesResponse, RagQueryRequest, RagQueryResponse, ScanRequest
 from backend.app.services.rag_service import RagService
 from backend.app.services.defaults import get_default_rag_root
 
@@ -184,6 +184,12 @@ def query(req: RagQueryRequest):
     return RagQueryResponse(hits=hits)
 
 
+@router.post('/query-modules', response_model=RagQueryModulesResponse)
+def query_modules(req: RagQueryRequest):
+    hits = rag_service.query_modules(req.query, req.top_k)
+    return RagQueryModulesResponse(hits=[RagQueryModuleHit(**h) for h in hits])
+
+
 @router.get("/function")
 def get_function(function_id: str):
     return rag_service.get_function(function_id)
@@ -271,11 +277,12 @@ def delete_by_root_dir(req: DeleteByRootDirRequest):
 
 class ModuleIndexRequest(BaseModel):
     root_dir: str
+    enrich: bool = False
 
 
 @router.post('/module-index-job')
 def start_module_index_job(req: ModuleIndexRequest):
-    return rag_service.start_module_index_job(req.root_dir)
+    return rag_service.start_module_index_job(req.root_dir, enrich=bool(req.enrich))
 
 
 @router.get('/module-index-job/{job_id}')
