@@ -44,6 +44,10 @@ https://www.ai-cbdes-rule.com/online/task
 - 辅助 API：Express（当前仅 `/api/health`，用于占位扩展）
 - 部署入口：Caddy（反向代理 + 静态站点 + 域名 HTTPS）
 
+大模型（LLM）接入说明：
+- 后端使用 OpenAI Python SDK，但默认指向百炼兼容网关（DashScope compatible-mode）。
+- Key 来源优先级：`ALIYUN_API_KEY` / `DASHSCOPE_API_KEY` / `AI_CBDES_ALIYUN_API_KEY`（见 `app/backend/app/services/openai_client.py`）。
+
 ### 数据与持久化
 
 后端默认把数据写入 `AI_CBDES_DATA_DIR` 指定的数据目录（未设置则使用系统默认目录）。主要文件：
@@ -60,6 +64,7 @@ https://www.ai-cbdes-rule.com/online/task
   - `/`：平台首页（Landing，介绍并跳转到 Rule/MLLM/GAASD）
   - `/offline/*`：Rule（RAG/档案/SFT 等主站页面）
   - `/mllm`：MLLM 工作台（投屏友好浅色主题）
+  - `/vlm`：VLM 工作台（多模块控制台页面）
   - `/gaasd/`：GAASD 子应用（`autostudio-ide/dist`，子路径静态站点 + SPA fallback）
   - `/py/*`：反代 FastAPI
   - `/api/*`：反代 Express
@@ -117,6 +122,16 @@ npm run dev
 
 打开 `http://localhost:5173`。
 
+GAASD 本地开发（独立子应用，base 固定为 `/gaasd/`）：
+
+```bash
+cd autostudio-ide
+npm install
+npm run dev
+```
+
+打开 `http://localhost:3000/gaasd/`。
+
 推荐先按系统设计说明跑通闭环流程：见 [app/docs/SYSTEM_DESIGN.md](app/docs/SYSTEM_DESIGN.md)。
 
 或使用一键脚本（Windows / PowerShell）：
@@ -163,6 +178,7 @@ powershell -ExecutionPolicy Bypass -File .\.deploy\windows-server\deploy.ps1 `
 
 部署会：
 - 安装 Python 依赖、构建前端
+- 构建 GAASD（`autostudio-ide`）并部署到 `/gaasd/`
 - 写入 `app\.runtime\Caddyfile`
 - 注册并启动 Windows 服务：
   - `ai-cbdes-fastapi`

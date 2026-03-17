@@ -30,6 +30,13 @@ npm run build
 ## 5.Caddy 配置（关键：只拦截 /gaasd，不碰 /mllm）
 现有网关入口位于：`app/.runtime/Caddyfile`（运行时由 `app/.deploy/windows-server/deploy.ps1` 生成）。
 
+当前仓库的部署脚本已内置 `/gaasd` 的处理逻辑（含缓存策略），见：
+- `app/.deploy/windows-server/deploy.ps1` 的 `Write-Caddyfile(...)`
+- 其中包含：
+  - `/gaasd` 自动补 `/gaasd/`
+  - `handle_path /gaasd/* { root * ...\autostudio-ide\dist; try_files {path} /index.html; ... }`
+  - `/gaasd/assets/*` 走 immutable 缓存，其余页面走 `no-store`（避免更新后仍命中旧 HTML）
+
 ### 5.1 手动验证用改法（直接改 Caddyfile 进行试跑）
 在 `(ai_cbdes_app)` 段内、`handle { ... }` 默认站点处理之前，新增：
 ```caddy
@@ -43,11 +50,11 @@ handle_path /gaasd/* {
 - 它会剥离 `/gaasd` 前缀，使 `/gaasd/assets/*` 能在 dist 下正确命中 `/assets/*`。
 - `try_files` 保证未来扩展成 SPA 子路由时也可刷新不 404。
 
-### 5.2 正式改法（改 deploy.ps1 的生成逻辑）
-因为 `deploy.ps1` 会重写 `app/.runtime/Caddyfile`，所以正式方案应：
-1) 在 `app/.deploy/windows-server/deploy.ps1` 的 `Write-Caddyfile(...)` 模板中加入上面的 `/gaasd` block（同样放在默认 `handle {}` 之前）。
-2) （可选）在 deploy 过程中补充 autostudio-ide 的依赖安装与构建：
-   - 在主工程构建后，增加：`Ensure-NpmInstall` + `Ensure-FrontendBuild` 指向 `autostudio-ide` 目录。
+### 5.2 正式改法（部署脚本已集成）
+因为 `deploy.ps1` 会重写 `app/.runtime/Caddyfile`，正式部署应以脚本生成结果为准：
+
+- `/gaasd` 的 Caddy 配置已集成在 `Write-Caddyfile(...)`。
+- autostudio-ide 的安装与构建已集成在 `Ensure-GaasdBuild(...)`（在部署流程中会执行 `npm ci` + `npm run build`）。
 
 ## 6.上线/回滚步骤（Windows 服务场景）
 ### 6.1 上线
@@ -68,4 +75,9 @@ handle_path /gaasd/* {
 - 现象：刷新 `/gaasd/xxx` 404
   - 检查是否配置了 `try_files {path} /index.html`
 - 现象：影响了主站 `/` 或 `/mllm`
-  - 检查 `/gaasd` 的 handler 是否放在默认 `handle { ... }` 之前，且匹配规则仅为 `/ga
+  - 检查 `/gaasd` 的 handler 是否放在默认 `handle { ... }` 之前，且匹配规则仅为 `/gaasd/*`
+
+## 8.与主站代码的关系（边界提醒）
+- `/gaasd/` 是独立构建产物（`autostudio-ide/dist`），不走主站 React Router。
+- `/mllm` 与 `/vlm` 属于主站（`app/dist`）的前端路由页面，由 Caddy 的默认 `handle { try_files ... /index.html }` 处理。
+- `/py/*` 仍反代 FastAPI，`/api/*` 仍反代 Express（health stub）。

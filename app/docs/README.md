@@ -85,7 +85,7 @@ graph TD
 - 默认数据目录：`LOCALAPPDATA/ai-cbdes-rule/data`（可用 `AI_CBDES_DATA_DIR` 覆盖）
   - RAG：`rag.sqlite3`
   - Archive：`archive.jsonl`
-- FastAPI 使用 OpenAI Python SDK 调用百炼兼容网关：确保 `.env` 中配置 `ALIYUN_API_KEY`。
+- FastAPI 使用 OpenAI Python SDK 调用百炼兼容网关：确保环境变量中配置 `ALIYUN_API_KEY`（或 `DASHSCOPE_API_KEY` / `AI_CBDES_ALIYUN_API_KEY`）。
 
 ## 在线流水线约束（阶段输入）
 
@@ -111,7 +111,17 @@ graph TD
 
 - Rule 主站（/offline/* + /online/*）：[RULE_WEB.md](RULE_WEB.md)
 - MLLM 控制台（/mllm）：[MLLM_WEB.md](MLLM_WEB.md)
+- VLM 页面（/vlm）：实现位于 `src/pages/vlm/VlmPage.tsx`，复用 `src/pages/mllm/original/components/*` 作为模块块内容。
 - GAASD 子应用（/gaasd/）：[GAASD.md](GAASD.md)
+
+## 生成代码的“多文件格式”约定（与门禁编译一致）
+
+前端在“生成新的函数 / QA 生成代码”等路径会以“多文件 Markdown”表达 `.h/.cpp`：
+
+- 文件分隔：`### <relative/path>`（展示层可能以 `//###` 注释形式呈现，但门禁解析会兼容）
+- 内容块：紧跟一个 Markdown code fence（```cpp / ```c++ / ```c）。展示层可能以 `//```cpp` 注释形式呈现（不会删除标识符）。
+
+门禁侧会按上述分隔符切分并落盘到 workspace 后进行统一编译与静态/单元/覆盖度检测（实现见 `backend/app/services/gate_workspace.py`）。
 
 ## 业务流程与接口
 
